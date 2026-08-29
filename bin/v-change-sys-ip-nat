@@ -1,0 +1,71 @@
+#!/bin/bash
+# info: change NAT IP address
+# options: IP NAT_IP [RESTART]
+#
+# example: v-change-sys-ip-nat 10.0.0.1 203.0.113.1
+#
+# This function for changing NAT IP associated with IP.
+
+#----------------------------------------------------------#
+#                Variables & Functions                     #
+#----------------------------------------------------------#
+
+# Argument definition
+ip="$1"
+nat_ip="$2"
+restart="$3"
+
+# Includes
+# shellcheck source=/etc/hestiacp/hestia.conf
+source /etc/hestiacp/hestia.conf
+# shellcheck source=/usr/local/hestia/func/main.sh
+source $HESTIA/func/main.sh
+# shellcheck source=/usr/local/hestia/func/ip.sh
+source $HESTIA/func/ip.sh
+# load config file
+source_conf "$HESTIA/conf/hestia.conf"
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args '2' "$#" 'IP NAT_IP [RESTART]'
+is_format_valid 'ip'
+is_format_valid 'nat_ip'
+is_ip_valid "$ip"
+is_restart_format_valid "$restart"
+
+# Perform verification if read-only mode is enabled
+check_hestia_demo_mode
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+# Updating IP
+if [ -z "$(grep NAT= $HESTIA/data/ips/$ip)" ]; then
+	sed -i "s/^TIME/NAT='$nat_ip'\nTIME/g" $HESTIA/data/ips/$ip
+	old=''
+	new="$nat_ip"
+else
+	old="$(get_ip_value '$NAT')"
+	new="$nat_ip"
+	sed -i "s/NAT=.*/NAT='$new'/" $HESTIA/data/ips/$ip
+	if [ -z "$nat_ip" ]; then
+		new="$ip"
+	fi
+fi
+
+# WEB/DNS/FTP/Firewall subsystems are not part of MiniPanel; these blocks
+# are guarded by their respective *_SYSTEM config keys, which are left
+# unset in minipanel.conf, so they are inert no-ops by design.
+
+#----------------------------------------------------------#
+#                       Hestia                             #
+#----------------------------------------------------------#
+
+# Logging
+$BIN/v-log-action "system" "Info" "System" "IP NAT address changed (IP: $ip, NAT IP: $nat_ip)."
+log_event "$OK" "$ARGUMENTS"
+
+exit

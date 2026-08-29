@@ -1,0 +1,62 @@
+#!/bin/bash
+# info: rebuild all assets for a specified user
+# options: USER [RESTART]
+#
+# This function rebuilds all assets for a user account:
+#
+# - Mail domains
+# - Databases
+# - User account configuration
+
+#----------------------------------------------------------#
+#                Variables & Functions                     #
+#----------------------------------------------------------#
+
+# Argument definition
+user=$1
+restart=$2
+
+# Includes
+# shellcheck source=/etc/hestiacp/hestia.conf
+source /etc/hestiacp/hestia.conf
+# shellcheck source=/usr/local/hestia/func/main.sh
+source $HESTIA/func/main.sh
+# shellcheck source=/usr/local/hestia/func/rebuild.sh
+source $HESTIA/func/rebuild.sh
+# shellcheck source=/usr/local/hestia/func/syshealth.sh
+source $HESTIA/func/syshealth.sh
+# load config file
+source_conf "$HESTIA/conf/hestia.conf"
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args '1' "$#" 'USER [RESTART]'
+is_format_valid 'user' 'restart'
+is_object_valid 'user' 'USER' "$user"
+check_user=$(is_object_unsuspended 'user' 'USER' "$user")
+if [ -n "$check_user" ]; then
+	exit
+fi
+
+# Perform verification if read-only mode is enabled
+check_hestia_demo_mode
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+# Rebuild loop (web/dns/cron rebuilding removed - not part of MiniPanel)
+$BIN/v-rebuild-mail-domains "$user" "$restart"
+$BIN/v-rebuild-databases "$user" "$restart"
+$BIN/v-rebuild-user "$user" "$restart"
+
+#----------------------------------------------------------#
+#                       Hestia                             #
+#----------------------------------------------------------#
+
+# Logging
+log_event "$OK" "$ARGUMENTS"
+
+exit
