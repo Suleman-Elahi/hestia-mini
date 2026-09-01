@@ -45,7 +45,7 @@ fm_v="7.15.1"
 software="acl apt-transport-https ca-certificates clamav-daemon cron curl dovecot-imapd
   dovecot-managesieved dovecot-pop3d dovecot-sieve exim4 exim4-daemon-heavy expect
   git hestia-nginx hestia-php jq libmail-dkim-perl lsb-release mariadb-client
-  mariadb-common mariadb-server mc mysql-client mysql-common mysql-server net-tools
+  mariadb-common mariadb-server mc mysql-client mysql-common net-tools
   nginx php${fpm_v} php${fpm_v}-apcu php${fpm_v}-bcmath php${fpm_v}-bz2 php${fpm_v}-cgi
   php${fpm_v}-cli php${fpm_v}-common php${fpm_v}-curl php${fpm_v}-gd php${fpm_v}-imagick
   php${fpm_v}-imap php${fpm_v}-intl php${fpm_v}-ldap php${fpm_v}-mbstring
@@ -344,15 +344,15 @@ if systemctl is-active --quiet mysql || systemctl is-active --quiet mariadb; the
 		echo "  MiniPanel normally installs its own MariaDB instance."
 		read -r -p "  Reuse the existing instance instead of installing a new one? [y/N] " reply
 		if [[ "$reply" =~ ^[Yy]$ ]]; then
-			software=$(echo "$software" | sed -E 's/\bmariadb-server\b//; s/\bmysql-server\b//')
-			echo "  Will reuse the existing database server; skipping mariadb-server/mysql-server install."
+			software=$(echo "$software" | sed -E 's/\bmariadb-server\b//')
+			echo "  Will reuse the existing database server; skipping mariadb-server install."
 		else
 			echo "  Proceeding to install MiniPanel's own MariaDB alongside the existing one."
 			echo "  NOTE: this may fail if the existing instance already holds port 3306."
 		fi
 	else
 		echo "  --yes specified: attempting to reuse the existing instance."
-		software=$(echo "$software" | sed -E 's/\bmariadb-server\b//; s/\bmysql-server\b//')
+		software=$(echo "$software" | sed -E 's/\bmariadb-server\b//')
 	fi
 fi
 
