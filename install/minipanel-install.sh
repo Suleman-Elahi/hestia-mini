@@ -376,10 +376,10 @@ check_result $? "Failed to install installer dependencies"
 
 # Add Hestia repository
 echo -e "\n[ * ] Adding Hestia repository..."
-if ! wget -qO- https://packages.hestiacp.com/gpg.key | gpg --batch --yes --dearmor -o /usr/share/keyrings/hestia-keyring.gpg 2>> "$LOG"; then
+if ! wget -qO- https://gpg.hestiacp.com/deb_signing.key | gpg --batch --yes --dearmor -o /usr/share/keyrings/hestia-keyring.gpg 2>> "$LOG"; then
 	check_result 1 "Failed to install the Hestia repository key. Check DNS/network connectivity."
 fi
-echo "deb [signed-by=/usr/share/keyrings/hestia-keyring.gpg] https://packages.hestiacp.com/ $codename main" > /etc/apt/sources.list.d/hestia.list
+echo "deb [signed-by=/usr/share/keyrings/hestia-keyring.gpg] https://apt.hestiacp.com/ $codename main" > /etc/apt/sources.list.d/hestia.list
 apt-get -qq update >> "$LOG" 2>&1
 check_result $? "Failed to update the Hestia repository. Check DNS/network connectivity."
 
