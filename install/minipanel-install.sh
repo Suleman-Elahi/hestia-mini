@@ -45,7 +45,7 @@ fm_v="7.15.1"
 software="acl apt-transport-https ca-certificates clamav-daemon cron curl dovecot-imapd
   dovecot-managesieved dovecot-pop3d dovecot-sieve exim4 exim4-daemon-heavy expect
   git hestia-nginx hestia-php jq libmail-dkim-perl lsb-release mariadb-client
-  mariadb-common mariadb-server mc mysql-client mysql-common net-tools
+  mariadb-common mariadb-server mc net-tools
   nginx php${fpm_v} php${fpm_v}-apcu php${fpm_v}-bcmath php${fpm_v}-bz2 php${fpm_v}-cgi
   php${fpm_v}-cli php${fpm_v}-common php${fpm_v}-curl php${fpm_v}-gd php${fpm_v}-imagick
   php${fpm_v}-imap php${fpm_v}-intl php${fpm_v}-ldap php${fpm_v}-mbstring
@@ -161,9 +161,10 @@ check_result() {
 	else
 		echo -e "[${RED} FAILED ${NC}]"
 		echo "  Error: $2"
+		echo "  Details: $LOG"
 		if [ "$VERBOSE" = 'yes' ]; then
 			echo "  Last 5 lines of log:"
-			tail -5 $LOG
+			tail -5 "$LOG"
 		fi
 		exit $1
 	fi
@@ -368,20 +369,23 @@ fi
 #----------------------------------------------------------#
 
 echo -e "\n[ * ] Installing required packages..."
-apt-get -qq update >> $LOG 2>&1
-apt-get -y install $installer_dependencies >> $LOG 2>&1
+apt-get -qq update >> "$LOG" 2>&1
+check_result $? "Failed to update package indexes. Check DNS/network connectivity."
+apt-get -y install $installer_dependencies >> "$LOG" 2>&1
 check_result $? "Failed to install installer dependencies"
 
 # Add Hestia repository
 echo -e "\n[ * ] Adding Hestia repository..."
-wget -qO- https://packages.hestiacp.com/gpg.key | gpg --dearmor -o /usr/share/keyrings/hestia-keyring.gpg 2>> $LOG
+if ! wget -qO- https://packages.hestiacp.com/gpg.key | gpg --batch --yes --dearmor -o /usr/share/keyrings/hestia-keyring.gpg 2>> "$LOG"; then
+	check_result 1 "Failed to install the Hestia repository key. Check DNS/network connectivity."
+fi
 echo "deb [signed-by=/usr/share/keyrings/hestia-keyring.gpg] https://packages.hestiacp.com/ $codename main" > /etc/apt/sources.list.d/hestia.list
-apt-get -qq update >> $LOG 2>&1
-check_result $? "Failed to add Hestia repository"
+apt-get -qq update >> "$LOG" 2>&1
+check_result $? "Failed to update the Hestia repository. Check DNS/network connectivity."
 
 # Install MiniPanel software
 echo -e "\n[ * ] Installing MiniPanel software..."
-apt-get -y install $software >> $LOG 2>&1
+apt-get -y install $software >> "$LOG" 2>&1
 check_result $? "Failed to install required software packages"
 
 #----------------------------------------------------------#
