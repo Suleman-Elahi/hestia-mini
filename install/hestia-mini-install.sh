@@ -547,6 +547,19 @@ check_result $? "Failed to update package index after adding repositories."
 echo -e "\n[ * ] Installing Hestia-Mini software packages..."
 echo "  NOTE: This process may take 5 to 15 minutes. Please wait..."
 
+# Preseed debconf for exim4 to prevent non-interactive configuration failures
+if [ ! -f /etc/mailname ]; then
+	(hostname -f 2>/dev/null || hostname) > /etc/mailname
+fi
+if command -v debconf-set-selections > /dev/null 2>&1; then
+	echo "exim4-config exim4/dc_eximconfig_configtype select internet site; mail is sent and received directly using SMTP" | debconf-set-selections 2>/dev/null || true
+	echo "exim4-config exim4/mailname string $(cat /etc/mailname 2>/dev/null || hostname)" | debconf-set-selections 2>/dev/null || true
+	echo "exim4-config exim4/no_config boolean true" | debconf-set-selections 2>/dev/null || true
+fi
+
+# Fix any broken/unconfigured packages from previous failed attempts
+dpkg --configure -a >> "$LOG" 2>&1 || true
+
 if [ "$PGSQL_ENABLE" = 'yes' ]; then
 	software="$software postgresql postgresql-contrib php${fpm_v}-pgsql"
 fi

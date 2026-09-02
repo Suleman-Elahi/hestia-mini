@@ -245,8 +245,8 @@ run rm -rf "$HESTIA/web/fm"
 #             Remove nginx / PHP-FPM / sudoers / cron         #
 #----------------------------------------------------------#
 
-echo -e "\n[ * ] Removing MiniPanel nginx/PHP-FPM/sudoers/cron configuration..."
-run rm -f /etc/nginx/conf.d/minipanel.conf
+echo -e "\n[ * ] Removing Hestia-Mini nginx/PHP-FPM/sudoers/cron configuration..."
+run rm -f /etc/nginx/conf.d/minipanel.conf /etc/nginx/conf.d/hestia-mini.conf
 run rm -f /etc/php/*/fpm/pool.d/www.conf
 run rm -f /etc/sudoers.d/hestiaweb
 run rm -f /var/spool/cron/crontabs/hestiaweb
