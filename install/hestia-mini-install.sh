@@ -464,40 +464,55 @@ fi
 #                    Install software                       #
 #----------------------------------------------------------#
 
-echo -e "\n[ * ] Installing required packages..."
-mkdir -p /usr/share/keyrings /etc/apt/sources.list.d
+# Generate locale to suppress locale warnings during apt install
+sed -i "s/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/g" /etc/locale.gen 2>/dev/null
+locale-gen > /dev/null 2>&1
 
-# Ensure Hestia repository configuration uses signed-by keyring
-echo "deb [signed-by=/usr/share/keyrings/hestia-keyring.gpg] https://apt.hestiacp.com/ $codename main" > /etc/apt/sources.list.d/hestia.list
+# Disable daemon autostart during apt-get install (matches original HestiaCP)
+echo -e '#!/bin/sh\nexit 101' > /usr/sbin/policy-rc.d
+chmod a+x /usr/sbin/policy-rc.d
 
-# Fetch Hestia repository GPG key before running apt-get update to avoid GPG errors
-if ! install_hestia_key; then
-	# If curl/wget/gpg are not yet installed, stashing hestia.list prevents NO_PUBKEY errors during installer_dependencies fetch
-	mv /etc/apt/sources.list.d/hestia.list /etc/apt/sources.list.d/hestia.list.tmp 2>/dev/null
-fi
+# Clean up any leftover hestia repo list before initial dependency check
+rm -f /etc/apt/sources.list.d/hestia.list /etc/apt/sources.list.d/hestia.list.tmp
 
+echo -e "\n[ * ] Installing installer dependencies..."
 apt-get -qq update >> "$LOG" 2>&1
-check_result $? "Failed to update package indexes. Check DNS/network connectivity."
-
 apt-get -y install $installer_dependencies >> "$LOG" 2>&1
 check_result $? "Failed to install installer dependencies"
 
-# Restore Hestia repository list and ensure GPG key is installed
+# Add Hestia repository and GPG keyring
 echo -e "\n[ * ] Adding Hestia repository..."
-echo "deb [signed-by=/usr/share/keyrings/hestia-keyring.gpg] https://apt.hestiacp.com/ $codename main" > /etc/apt/sources.list.d/hestia.list
-rm -f /etc/apt/sources.list.d/hestia.list.tmp
+mkdir -p /usr/share/keyrings /etc/apt/sources.list.d
 
 if ! install_hestia_key; then
-	check_result 1 "Failed to install the Hestia repository key. Check DNS/network connectivity."
+	check_result 1 "Failed to install the Hestia repository key."
 fi
 
-apt-get -qq update >> "$LOG" 2>&1
-check_result $? "Failed to update the Hestia repository. Check DNS/network connectivity."
+echo "deb [signed-by=/usr/share/keyrings/hestia-keyring.gpg] https://apt.hestiacp.com/ $codename main" > /etc/apt/sources.list.d/hestia.list
 
-# Install MiniPanel software
-echo -e "\n[ * ] Installing MiniPanel software..."
-apt-get -y install $software >> "$LOG" 2>&1
-check_result $? "Failed to install required software packages"
+apt-get -qq update >> "$LOG" 2>&1
+check_result $? "Failed to update package index after adding Hestia repository."
+
+# Install Hestia-Mini software in background with animated spinner (matches original HestiaCP)
+echo -e "\n[ * ] Installing Hestia-Mini software packages..."
+echo "  NOTE: This process may take 5 to 15 minutes. Please wait..."
+
+apt-get -y install $software >> "$LOG" 2>&1 &
+BACK_PID=$!
+
+spin_i=1
+while kill -0 $BACK_PID > /dev/null 2>&1; do
+	printf " [%c]  " "${spinner:spin_i++%${#spinner}:1}"
+	sleep 0.5
+	printf "\b\b\b\b\b\b"
+done
+echo -ne '\b\b\b\b\b\b'
+
+wait $BACK_PID
+check_result $? "Failed to install required software packages. Check details in: $LOG"
+
+# Restore service autostart policy
+rm -f /usr/sbin/policy-rc.d
 
 #----------------------------------------------------------#
 #                 Configure Hestia base                     #
