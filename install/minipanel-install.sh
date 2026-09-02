@@ -212,6 +212,37 @@ sort_config_file() {
 	fi
 }
 
+install_hestia_key() {
+	mkdir -p /usr/share/keyrings /etc/apt/sources.list.d
+	local downloaded='no'
+	rm -f /tmp/hestia_key.asc
+
+	for url in "https://apt.hestiacp.com/pubkey.gpg" "https://gpg.hestiacp.com/deb_signing.key"; do
+		if command -v curl > /dev/null 2>&1; then
+			if curl -fsSL "$url" -o /tmp/hestia_key.asc 2>> "$LOG"; then
+				downloaded='yes'
+				break
+			fi
+		elif command -v wget > /dev/null 2>&1; then
+			if wget -qO /tmp/hestia_key.asc "$url" 2>> "$LOG"; then
+				downloaded='yes'
+				break
+			fi
+		fi
+	done
+
+	if [ "$downloaded" = 'yes' ] && [ -s /tmp/hestia_key.asc ]; then
+		if command -v gpg > /dev/null 2>&1; then
+			gpg --batch --yes --dearmor -o /usr/share/keyrings/hestia-keyring.gpg /tmp/hestia_key.asc 2>> "$LOG"
+		else
+			cp -f /tmp/hestia_key.asc /usr/share/keyrings/hestia-keyring.gpg
+		fi
+		rm -f /tmp/hestia_key.asc
+		return 0
+	fi
+	return 1
+}
+
 #----------------------------------------------------------#
 #                    Pre-flight checks                      #
 #----------------------------------------------------------#
@@ -369,17 +400,32 @@ fi
 #----------------------------------------------------------#
 
 echo -e "\n[ * ] Installing required packages..."
+mkdir -p /usr/share/keyrings /etc/apt/sources.list.d
+
+# Ensure Hestia repository configuration uses signed-by keyring
+echo "deb [signed-by=/usr/share/keyrings/hestia-keyring.gpg] https://apt.hestiacp.com/ $codename main" > /etc/apt/sources.list.d/hestia.list
+
+# Fetch Hestia repository GPG key before running apt-get update to avoid GPG errors
+if ! install_hestia_key; then
+	# If curl/wget/gpg are not yet installed, stashing hestia.list prevents NO_PUBKEY errors during installer_dependencies fetch
+	mv /etc/apt/sources.list.d/hestia.list /etc/apt/sources.list.d/hestia.list.tmp 2>/dev/null
+fi
+
 apt-get -qq update >> "$LOG" 2>&1
 check_result $? "Failed to update package indexes. Check DNS/network connectivity."
+
 apt-get -y install $installer_dependencies >> "$LOG" 2>&1
 check_result $? "Failed to install installer dependencies"
 
-# Add Hestia repository
+# Restore Hestia repository list and ensure GPG key is installed
 echo -e "\n[ * ] Adding Hestia repository..."
-if ! wget -qO- https://gpg.hestiacp.com/deb_signing.key | gpg --batch --yes --dearmor -o /usr/share/keyrings/hestia-keyring.gpg 2>> "$LOG"; then
+echo "deb [signed-by=/usr/share/keyrings/hestia-keyring.gpg] https://apt.hestiacp.com/ $codename main" > /etc/apt/sources.list.d/hestia.list
+rm -f /etc/apt/sources.list.d/hestia.list.tmp
+
+if ! install_hestia_key; then
 	check_result 1 "Failed to install the Hestia repository key. Check DNS/network connectivity."
 fi
-echo "deb [signed-by=/usr/share/keyrings/hestia-keyring.gpg] https://apt.hestiacp.com/ $codename main" > /etc/apt/sources.list.d/hestia.list
+
 apt-get -qq update >> "$LOG" 2>&1
 check_result $? "Failed to update the Hestia repository. Check DNS/network connectivity."
 
