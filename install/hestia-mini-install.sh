@@ -217,31 +217,94 @@ sort_config_file() {
 install_hestia_key() {
 	mkdir -p /usr/share/keyrings /etc/apt/sources.list.d
 	local downloaded='no'
-	rm -f /tmp/hestia_key.asc
+	rm -f /tmp/hestia_key.asc /tmp/hestia_key.gpg
 
 	for url in "https://apt.hestiacp.com/pubkey.gpg" "https://gpg.hestiacp.com/deb_signing.key"; do
 		if command -v curl > /dev/null 2>&1; then
-			if curl -fsSL "$url" -o /tmp/hestia_key.asc 2>> "$LOG"; then
+			if curl -4 -fsSL --retry 3 "$url" -o /tmp/hestia_key.asc 2>> "$LOG" || curl -fsSL --retry 3 "$url" -o /tmp/hestia_key.asc 2>> "$LOG"; then
 				downloaded='yes'
 				break
 			fi
 		elif command -v wget > /dev/null 2>&1; then
-			if wget -qO /tmp/hestia_key.asc "$url" 2>> "$LOG"; then
+			if wget -4 -qO /tmp/hestia_key.asc "$url" 2>> "$LOG" || wget -qO /tmp/hestia_key.asc "$url" 2>> "$LOG"; then
 				downloaded='yes'
 				break
 			fi
 		fi
 	done
 
-	if [ "$downloaded" = 'yes' ] && [ -s /tmp/hestia_key.asc ]; then
+	if [ "$downloaded" != 'yes' ] || [ ! -s /tmp/hestia_key.asc ]; then
+		cat << 'KEY_EOF' > /tmp/hestia_key.asc
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+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
+a2xXGjpPOaH0xuLCMe+7bw==
+=6H1w
+-----END PGP PUBLIC KEY BLOCK-----
+KEY_EOF
+	fi
+
+	if [ -s /tmp/hestia_key.asc ]; then
 		if command -v gpg > /dev/null 2>&1; then
-			gpg --batch --yes --dearmor -o /usr/share/keyrings/hestia-keyring.gpg /tmp/hestia_key.asc 2>> "$LOG"
+			gpg --batch --yes --dearmor -o /tmp/hestia_key.gpg /tmp/hestia_key.asc 2>> "$LOG"
+			if [ -f /tmp/hestia_key.gpg ] && [ -s /tmp/hestia_key.gpg ]; then
+				mv -f /tmp/hestia_key.gpg /usr/share/keyrings/hestia-keyring.gpg
+			else
+				cp -f /tmp/hestia_key.asc /usr/share/keyrings/hestia-keyring.gpg
+			fi
 		else
 			cp -f /tmp/hestia_key.asc /usr/share/keyrings/hestia-keyring.gpg
 		fi
-		rm -f /tmp/hestia_key.asc
+		rm -f /tmp/hestia_key.asc /tmp/hestia_key.gpg
 		return 0
 	fi
+
 	return 1
 }
 
