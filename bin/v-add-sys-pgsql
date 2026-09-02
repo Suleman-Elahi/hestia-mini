@@ -1,0 +1,92 @@
+#!/bin/bash
+# info: install and configure PostgreSQL database engine on-demand
+# options: [PASSWORD] [INSTALL_PHPPGADMIN]
+#
+# example: v-add-sys-pgsql
+# example: v-add-sys-pgsql mySecretPassword yes
+#
+# This script installs PostgreSQL, configures local authentication,
+# adds the localhost database server host to Hestia, and optionally installs phpPgAdmin.
+
+#----------------------------------------------------------#
+#                Variables & Functions                     #
+#----------------------------------------------------------#
+
+# Includes
+# shellcheck source=/etc/hestiacp/hestia.conf
+source /etc/hestiacp/hestia.conf
+# shellcheck source=/usr/local/hestia/func/main.sh
+source $HESTIA/func/main.sh
+# shellcheck source=/usr/local/hestia/func/db.sh
+source $HESTIA/func/db.sh
+# load config file
+source_conf "$HESTIA/conf/hestia.conf"
+
+dbpass=$1
+install_phppgadmin=${2:-yes}
+
+# Root permission check
+if [ "x$(id -u)" != 'x0' ]; then
+	echo "Error: Script can be executed only by root"
+	exit 1
+fi
+
+echo "[ * ] Installing PostgreSQL packages..."
+fpm_v="8.2"
+apt-get update -qq > /dev/null 2>&1
+apt-get install -y postgresql postgresql-contrib php${fpm_v}-pgsql php-pgsql > /dev/null 2>&1
+
+if ! command -v psql > /dev/null 2>&1; then
+	echo "Error: Failed to install PostgreSQL packages."
+	exit 1
+fi
+
+systemctl enable postgresql > /dev/null 2>&1
+systemctl start postgresql > /dev/null 2>&1
+
+if [ -z "$dbpass" ]; then
+	dbpass=$(gen_pass '12' 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789')
+fi
+
+# Configure postgres user password
+su - postgres -c "psql -c \"ALTER USER postgres WITH PASSWORD '$dbpass';\"" > /dev/null 2>&1
+
+# Ensure pg_hba.conf permits md5 authentication for local connections
+pg_ver=$(psql --version 2>/dev/null | awk '{print $3}' | cut -f 1-2 -d .)
+pg_hba=$(find /etc/postgresql /var/lib/pgsql/data -name "pg_hba.conf" 2>/dev/null | head -n 1)
+
+if [ -f "$pg_hba" ]; then
+	if ! grep -q "hestia pgsql md5" "$pg_hba"; then
+		echo "# hestia pgsql md5" >> "$pg_hba"
+		echo "local   all             all                                     md5" >> "$pg_hba"
+		echo "host    all             all             127.0.0.1/32            md5" >> "$pg_hba"
+		echo "host    all             all             ::1/128                 md5" >> "$pg_hba"
+		systemctl reload postgresql > /dev/null 2>&1
+	fi
+fi
+
+# Register PostgreSQL host in Hestia
+$BIN/v-add-database-host pgsql localhost postgres "$dbpass" > /dev/null 2>&1
+
+if [ "$install_phppgadmin" = 'yes' ]; then
+	echo "[ * ] Installing phpPgAdmin web interface..."
+	pga_v="7.14.6"
+	if [ ! -d /usr/share/phppgadmin ]; then
+		mkdir -p /usr/share/phppgadmin
+		( cd /tmp && \
+		  wget --quiet "https://github.com/phppgadmin/phppgadmin/releases/download/v$pga_v/phpPgAdmin-$pga_v.tar.gz" && \
+		  tar xzf "phpPgAdmin-$pga_v.tar.gz" && \
+		  cp -rf "phpPgAdmin-$pga_v"/* /usr/share/phppgadmin/ && \
+		  rm -rf "phpPgAdmin-$pga_v" "phpPgAdmin-$pga_v.tar.gz" ) > /dev/null 2>&1
+		if [ -f "$HESTIA/install/deb/phppgadmin/config.inc.php" ]; then
+			cp -f "$HESTIA/install/deb/phppgadmin/config.inc.php" /usr/share/phppgadmin/conf/config.inc.php 2>/dev/null
+		fi
+	fi
+	systemctl restart nginx > /dev/null 2>&1
+fi
+
+$BIN/v-log-action "system" "Info" "Database" "PostgreSQL installed on-demand."
+log_event "$OK" "$ARGUMENTS"
+echo "PostgreSQL has been successfully installed and enabled."
+echo "Superuser password for 'postgres': $dbpass"
+exit 0

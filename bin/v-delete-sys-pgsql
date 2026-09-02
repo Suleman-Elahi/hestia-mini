@@ -1,0 +1,53 @@
+#!/bin/bash
+# info: remove PostgreSQL database host and stop service
+# options: [PURGE_PACKAGES]
+#
+# example: v-delete-sys-pgsql
+# example: v-delete-sys-pgsql yes
+
+# Includes
+# shellcheck source=/etc/hestiacp/hestia.conf
+source /etc/hestiacp/hestia.conf
+# shellcheck source=/usr/local/hestia/func/main.sh
+source $HESTIA/func/main.sh
+# load config file
+source_conf "$HESTIA/conf/hestia.conf"
+
+purge_packages=${1:-no}
+
+# Root permission check
+if [ "x$(id -u)" != 'x0' ]; then
+	echo "Error: Script can be executed only by root"
+	exit 1
+fi
+
+echo "[ * ] Removing PostgreSQL from Hestia configuration..."
+
+# Remove database host if registered
+if [ -f "$HESTIA/conf/pgsql.conf" ]; then
+	$BIN/v-delete-database-host pgsql localhost > /dev/null 2>&1
+	rm -f "$HESTIA/conf/pgsql.conf"
+fi
+
+# Update DB_SYSTEM in hestia.conf
+if grep -q "DB_SYSTEM" "$HESTIA/conf/hestia.conf"; then
+	new_db=$(echo "$DB_SYSTEM" | sed -E 's/(,pgsql|pgsql,?)//g')
+	if [ -z "$new_db" ]; then
+		new_db="mysql"
+	fi
+	sed -i "s/DB_SYSTEM=.*/DB_SYSTEM='$new_db'/g" "$HESTIA/conf/hestia.conf"
+fi
+
+systemctl stop postgresql > /dev/null 2>&1
+systemctl disable postgresql > /dev/null 2>&1
+
+if [ "$purge_packages" = "yes" ]; then
+	echo "[ * ] Purging PostgreSQL packages..."
+	apt-get purge -y postgresql postgresql-contrib php*-pgsql > /dev/null 2>&1
+	rm -rf /etc/postgresql /var/lib/postgresql
+fi
+
+$BIN/v-log-action "system" "Info" "Database" "PostgreSQL removed."
+log_event "$OK" "$ARGUMENTS"
+echo "PostgreSQL service and configuration removed."
+exit 0

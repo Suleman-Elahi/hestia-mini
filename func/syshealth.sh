@@ -212,7 +212,7 @@ function syshealth_repair_system_config() {
 	# Default language
 	if [[ -z $(check_key_exists 'LANGUAGE') ]]; then
 		echo "[ ! ] Adding missing variable to hestia.conf: LANGUAGE ('en')"
-		$BIN/v-change-sys-language 'LANGUAGE' 'en'
+		$BIN/v-change-sys-language 'en'
 	fi
 
 	# Disk Quota

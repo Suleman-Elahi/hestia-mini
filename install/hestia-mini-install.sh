@@ -43,7 +43,7 @@ pga_v="7.14.6"
 # File Manager (Filegator) version
 fm_v="7.15.1"
 
-# Defining software pack - minimal: mail + database + file manager
+# Defining software pack - minimal: mail + database (MySQL/MariaDB) + file manager
 software="acl apt-transport-https ca-certificates clamav-daemon cron curl dovecot-imapd
   dovecot-managesieved dovecot-pop3d dovecot-sieve exim4 exim4-daemon-heavy expect
   git hestia-nginx hestia-php jq libmail-dkim-perl lsb-release mariadb-client
@@ -51,8 +51,8 @@ software="acl apt-transport-https ca-certificates clamav-daemon cron curl doveco
   nginx php${fpm_v} php${fpm_v}-apcu php${fpm_v}-bcmath php${fpm_v}-bz2 php${fpm_v}-cgi
   php${fpm_v}-cli php${fpm_v}-common php${fpm_v}-curl php${fpm_v}-gd php${fpm_v}-imagick
   php${fpm_v}-imap php${fpm_v}-intl php${fpm_v}-ldap php${fpm_v}-mbstring
-  php${fpm_v}-mysql php${fpm_v}-pgsql php${fpm_v}-pspell php${fpm_v}-readline
-  php${fpm_v}-xml php${fpm_v}-zip php${fpm_v}-fpm postgresql postgresql-contrib spamd unrar-free
+  php${fpm_v}-mysql php${fpm_v}-pspell php${fpm_v}-readline
+  php${fpm_v}-xml php${fpm_v}-zip php${fpm_v}-fpm spamd unrar-free
   unzip util-linux vim-common whois zip zstd restic composer"
 
 installer_dependencies="apt-transport-https ca-certificates curl dirmngr gnupg openssl wget sudo"
@@ -70,9 +70,9 @@ NC='\033[0m'
 # Non-interactive flags (can be overridden via env or CLI flags below)
 ASSUME_YES='no'
 PURGE_STUB_MTA='ask'
-PGSQL_ENABLE='yes'
+PGSQL_ENABLE='no'
 PMA_INSTALL='yes'
-PGA_INSTALL='yes'
+PGA_INSTALL='no'
 FM_INSTALL='yes'
 ADMIN_EMAIL=''
 ADMIN_PASSWORD=''
@@ -94,12 +94,22 @@ while [ $# -gt 0 ]; do
 			PURGE_STUB_MTA='no'
 			shift
 			;;
+		--postgresql | --pgsql)
+			PGSQL_ENABLE='yes'
+			PGA_INSTALL='yes'
+			shift
+			;;
 		--no-pgsql)
 			PGSQL_ENABLE='no'
+			PGA_INSTALL='no'
 			shift
 			;;
 		--no-pma)
 			PMA_INSTALL='no'
+			shift
+			;;
+		--pga)
+			PGA_INSTALL='yes'
 			shift
 			;;
 		--no-pga)
@@ -537,6 +547,10 @@ check_result $? "Failed to update package index after adding repositories."
 echo -e "\n[ * ] Installing Hestia-Mini software packages..."
 echo "  NOTE: This process may take 5 to 15 minutes. Please wait..."
 
+if [ "$PGSQL_ENABLE" = 'yes' ]; then
+	software="$software postgresql postgresql-contrib php${fpm_v}-pgsql"
+fi
+
 apt-get -y install $software >> "$LOG" 2>&1 &
 BACK_PID=$!
 
@@ -719,10 +733,22 @@ if [ "$dovecot_version" = "2.4" ] && [ -d "$HESTIA_COMMON_DIR/dovecot/2.4" ]; th
 elif [ -d "$HESTIA_COMMON_DIR/dovecot/2.3" ]; then
 	cp -f $HESTIA_COMMON_DIR/dovecot/2.3/dovecot.conf /etc/dovecot/ 2>> $LOG
 	cp -f $HESTIA_COMMON_DIR/dovecot/2.3/conf.d/* /etc/dovecot/conf.d/ 2>> $LOG
+	rm -f /etc/dovecot/conf.d/15-mailboxes.conf
 fi
+chown -R root:root /etc/dovecot* 2>> $LOG
 touch /var/log/dovecot.log
-chown dovecot:dovecot /var/log/dovecot.log
+chown dovecot:mail /var/log/dovecot.log
 chmod 660 /var/log/dovecot.log
+
+# Ensure SSL certs exist for dovecot (snakeoil default certs)
+if [ ! -f /etc/ssl/certs/ssl-cert-snakeoil.pem ] || [ ! -f /etc/ssl/private/ssl-cert-snakeoil.key ]; then
+	mkdir -p /etc/ssl/certs /etc/ssl/private
+	openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+		-keyout /etc/ssl/private/ssl-cert-snakeoil.key \
+		-out /etc/ssl/certs/ssl-cert-snakeoil.pem \
+		-subj "/CN=$(hostname)" > /dev/null 2>&1
+	chmod 600 /etc/ssl/private/ssl-cert-snakeoil.key
+fi
 
 echo -e "\n[ * ] Configuring ClamAV (antivirus)..."
 systemctl enable clamav-daemon 2>/dev/null
@@ -978,6 +1004,33 @@ chmod 600 /var/spool/cron/crontabs/hestiaweb
 chown hestiaweb:hestiaweb /var/spool/cron/crontabs/hestiaweb
 
 #----------------------------------------------------------#
+#               Generate SSL Certificate                    #
+#----------------------------------------------------------#
+
+echo -e "\n[ * ] Generating self-signed SSL certificate..."
+$HESTIA/bin/v-generate-ssl-cert "$(hostname -f 2>/dev/null || hostname)" "$ADMIN_EMAIL" 'US' 'California' 'San Francisco' 'Hestia Control Panel' 'IT' >> "$LOG" 2>&1
+
+#----------------------------------------------------------#
+#                Create admin user                          #
+#----------------------------------------------------------#
+
+echo -e "\n[ * ] Creating admin user..."
+if [ -z "$ADMIN_PASSWORD" ]; then
+	adminpass=$(gen_pass '8' 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')$(gen_pass '4' 'abcdefghijklmnopqrstuvwxyz')$(gen_pass '4' '0123456789')
+else
+	adminpass="$ADMIN_PASSWORD"
+fi
+
+if [ -e "$HESTIA/data/users/admin" ]; then
+	echo "  Admin user already exists, skipping creation."
+else
+	$HESTIA/bin/v-add-user admin "$adminpass" "$ADMIN_EMAIL" default Admin >> $LOG 2>&1
+	check_result $? "Failed to create admin user - check $LOG"
+	$HESTIA/bin/v-change-user-role admin admin >> $LOG 2>&1
+	warn_only $? "Failed to grant admin role - run manually: v-change-user-role admin admin"
+fi
+
+#----------------------------------------------------------#
 #                Set default values                         #
 #----------------------------------------------------------#
 
@@ -994,6 +1047,23 @@ $HESTIA/bin/v-change-sys-port $port > /dev/null 2>&1
 
 # Update defaults
 $HESTIA/bin/v-update-sys-defaults > /dev/null 2>&1
+
+#----------------------------------------------------------#
+#                Install File Manager                       #
+#----------------------------------------------------------#
+
+if [ "$FM_INSTALL" = 'yes' ]; then
+	echo -e "\n[ * ] Installing File Manager..."
+	export HOMEDIR='/home'
+	export APP_NAME='Hestia-Mini'
+	if [ ! -d "/home/admin" ]; then
+		mkdir -p /home/admin/.composer /home/admin/.config
+	fi
+	$HESTIA/bin/v-add-sys-filemanager quiet >> $LOG 2>&1
+	warn_only $? "File Manager installation failed - re-run manually with: /usr/local/hestia/bin/v-add-sys-filemanager"
+else
+	echo -e "\n[ * ] Skipping File Manager install (disabled via --no-filemanager)."
+fi
 
 #----------------------------------------------------------#
 #                  Enable Services                          #
@@ -1016,52 +1086,6 @@ check_result $? "Failed to start Nginx"
 systemctl enable hestia 2>/dev/null
 systemctl restart hestia 2>/dev/null
 warn_only $? "Could not (re)start the hestia panel service - check manually with 'systemctl status hestia'"
-
-#----------------------------------------------------------#
-#               Generate SSL Certificate                    #
-#----------------------------------------------------------#
-
-echo -e "\n[ * ] Generating self-signed SSL certificate..."
-$HESTIA/bin/v-generate-ssl-cert "$(hostname -f 2>/dev/null || hostname)" "$ADMIN_EMAIL" 'US' 'California' 'San Francisco' 'Hestia Control Panel' 'IT' >> "$LOG" 2>&1
-
-#----------------------------------------------------------#
-#                Install File Manager                       #
-#----------------------------------------------------------#
-
-if [ "$FM_INSTALL" = 'yes' ]; then
-	echo -e "\n[ * ] Installing File Manager..."
-	export HOMEDIR='/home'
-	export APP_NAME='Hestia-Mini'
-	# v-add-sys-filemanager needs ROOT_USER's home directory and Composer;
-	# it will install Composer for that user automatically if missing.
-	if [ ! -d "/home/admin" ]; then
-		mkdir -p /home/admin/.composer /home/admin/.config
-	fi
-	$HESTIA/bin/v-add-sys-filemanager quiet >> $LOG 2>&1
-	warn_only $? "File Manager installation failed - re-run manually with: /usr/local/hestia/bin/v-add-sys-filemanager"
-else
-	echo -e "\n[ * ] Skipping File Manager install (disabled via --no-filemanager)."
-fi
-
-#----------------------------------------------------------#
-#                Create admin user                          #
-#----------------------------------------------------------#
-
-echo -e "\n[ * ] Creating admin user..."
-if [ -z "$ADMIN_PASSWORD" ]; then
-	adminpass=$(gen_pass '8' 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')$(gen_pass '4' 'abcdefghijklmnopqrstuvwxyz')$(gen_pass '4' '0123456789')
-else
-	adminpass="$ADMIN_PASSWORD"
-fi
-
-if [ -e "$HESTIA/data/users/admin" ]; then
-	echo "  Admin user already exists, skipping creation."
-else
-	$HESTIA/bin/v-add-user admin "$adminpass" "$ADMIN_EMAIL" default Admin >> $LOG 2>&1
-	check_result $? "Failed to create admin user - check $LOG"
-	$HESTIA/bin/v-change-user-role admin admin >> $LOG 2>&1
-	warn_only $? "Failed to grant admin role - run manually: v-change-user-role admin admin"
-fi
 
 echo -e "\n====================================================="
 echo -e "  Hestia-Mini has been installed successfully!"
