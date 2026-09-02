@@ -584,6 +584,24 @@ cp -rf "$MINIPANEL_SRC/func/internal/"* $HESTIA/func/internal/ 2>> $LOG
 cp -rf "$MINIPANEL_SRC/web/"* $HESTIA/web/ 2>> $LOG
 check_result $? "Failed to copy web/ UI from $MINIPANEL_SRC/web"
 
+# Copy default data packages, templates, firewall, and api definitions into $HESTIA/data/
+if [ -d "$HESTIA/install/common/packages" ]; then
+	cp -rf "$HESTIA/install/common/packages" "$HESTIA/data/" 2>> $LOG
+fi
+if [ -d "$HESTIA/install/deb/templates" ]; then
+	cp -rf "$HESTIA/install/deb/templates" "$HESTIA/data/" 2>> $LOG
+fi
+if [ -d "$HESTIA/install/common/templates" ]; then
+	mkdir -p "$HESTIA/data/templates"
+	cp -rf "$HESTIA/install/common/templates/"* "$HESTIA/data/templates/" 2>> $LOG
+fi
+if [ -d "$HESTIA/install/common/firewall" ]; then
+	cp -rf "$HESTIA/install/common/firewall" "$HESTIA/data/" 2>> $LOG
+fi
+if [ -d "$HESTIA/install/common/api" ]; then
+	cp -rf "$HESTIA/install/common/api" "$HESTIA/data/" 2>> $LOG
+fi
+
 # Symlink /etc/hestiacp/hestia.conf -> minipanel.conf (kept bin/func scripts
 # source this fixed path)
 mkdir -p /etc/hestiacp
@@ -904,6 +922,7 @@ chmod 440 /etc/sudoers.d/hestiaweb
 
 echo -e "\n[ * ] Setting up cron jobs..."
 mkdir -p /var/spool/cron/crontabs
+rm -f /var/spool/cron/crontabs/hestiaweb
 
 cat > /var/spool/cron/crontabs/hestiaweb << CRON
 MAILTO=""
@@ -963,7 +982,7 @@ warn_only $? "Could not (re)start the hestia panel service - check manually with
 #----------------------------------------------------------#
 
 echo -e "\n[ * ] Generating self-signed SSL certificate..."
-$HESTIA/bin/v-generate-ssl-cert $(hostname) 2>/dev/null
+$HESTIA/bin/v-generate-ssl-cert "$(hostname -f 2>/dev/null || hostname)" "$ADMIN_EMAIL" 'US' 'California' 'San Francisco' 'Hestia Control Panel' 'IT' >> "$LOG" 2>&1
 
 #----------------------------------------------------------#
 #                Install File Manager                       #
