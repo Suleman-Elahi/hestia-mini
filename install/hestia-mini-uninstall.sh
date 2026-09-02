@@ -2,9 +2,9 @@
 
 # ======================================================== #
 #
-# MiniPanel Uninstaller
+# Hestia-Mini Uninstaller
 #
-# Removes everything installed by minipanel-install.sh:
+# Removes everything installed by hestia-mini-install.sh:
 # panel, mail stack, database engines, phpMyAdmin/phpPgAdmin,
 # file manager, sudoers, cron, system users, and - unless
 # --keep-data is given - all mail/database DATA as well.
@@ -17,7 +17,7 @@
 
 export PATH=$PATH:/sbin
 HESTIA='/usr/local/hestia'
-LOG="/root/minipanel_uninstall-$(date +%d%m%Y%H%M).log"
+LOG="/root/hestia_mini_uninstall-$(date +%d%m%Y%H%M).log"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -84,7 +84,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 echo "====================================================="
-echo "       MiniPanel Uninstaller"
+echo "       Hestia-Mini Uninstaller"
 echo "====================================================="
 echo
 echo -e "${YELLOW}This will remove:${NC}"

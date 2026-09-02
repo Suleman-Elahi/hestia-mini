@@ -2,7 +2,7 @@
 
 # ======================================================== #
 #
-# MiniPanel Installer
+# Hestia-Mini Installer
 # A stripped-down admin panel derived from HestiaCP
 # Supports: Mail, Database, File Management
 #
@@ -11,7 +11,7 @@
 export PATH=$PATH:/sbin
 export DEBIAN_FRONTEND=noninteractive
 HESTIA='/usr/local/hestia'
-LOG="/root/minipanel_install-$(date +%d%m%Y%H%M).log"
+LOG="/root/hestia_mini_install-$(date +%d%m%Y%H%M).log"
 spinner="/\-|"
 os=$(cat /etc/os-release | grep ^ID= | cut -f 2 -d =)
 release=$(cat /etc/debian_version | tr "." "\n" | head -n1)
@@ -24,10 +24,12 @@ VERBOSE='no'
 # Directory of this script, so we can find bin/func/install sources
 # regardless of where the repo was checked out.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MINIPANEL_SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
+HESTIA_MINI_SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
+MINIPANEL_SRC="$HESTIA_MINI_SRC"
 
 # Define software versions
-MINIPANEL_VERSION='1.0.0'
+HESTIA_MINI_VERSION='1.0.0'
+MINIPANEL_VERSION="$HESTIA_MINI_VERSION"
 
 # Supported PHP version (also used for phpMyAdmin/phpPgAdmin/panel PHP-FPM pool)
 fpm_v="8.2"
@@ -249,7 +251,7 @@ install_hestia_key() {
 
 echo -e "\n"
 echo "====================================================="
-echo "       MiniPanel Installer v${MINIPANEL_VERSION}"
+echo "       Hestia-Mini Installer v${HESTIA_MINI_VERSION}"
 echo "   Derived from HestiaCP (https://hestiacp.com)"
 echo "====================================================="
 echo -e "\n"
@@ -294,13 +296,13 @@ echo "[ * ] Operating system: $os $release ($codename)"
 echo -e "\n[ * ] Checking port conflicts..."
 if port_in_use 8083; then
 	echo -e "${YELLOW}Warning: Port 8083 is already in use.${NC}"
-	echo "  MiniPanel will use a different port for the panel."
+	echo "  Hestia-Mini will use a different port for the panel."
 	port=$(find_free_port 8084 8085 8086 8087 8088 8089 8090)
 	if [ -z "$port" ]; then
 		echo -e "${RED}Error: Could not find an available port for the panel.${NC}"
 		exit 1
 	fi
-	echo "  Using port $port for MiniPanel."
+	echo "  Using port $port for Hestia-Mini."
 else
 	port=8083
 fi
@@ -495,10 +497,10 @@ check_result $? "Failed to copy bin/ scripts from $MINIPANEL_SRC/bin"
 chmod 755 $HESTIA/bin/*
 
 # Copy func/ libraries
-cp -f "$MINIPANEL_SRC/func/"* $HESTIA/func/ 2>> $LOG
+cp -rf "$MINIPANEL_SRC/func/"* $HESTIA/func/ 2>> $LOG
 check_result $? "Failed to copy func/ libraries from $MINIPANEL_SRC/func"
 mkdir -p $HESTIA/func/internal
-cp -f "$MINIPANEL_SRC/func/internal/"* $HESTIA/func/internal/ 2>> $LOG
+cp -rf "$MINIPANEL_SRC/func/internal/"* $HESTIA/func/internal/ 2>> $LOG
 
 # Copy web/ UI
 cp -rf "$MINIPANEL_SRC/web/"* $HESTIA/web/ 2>> $LOG
@@ -892,7 +894,7 @@ $HESTIA/bin/v-generate-ssl-cert $(hostname) 2>/dev/null
 if [ "$FM_INSTALL" = 'yes' ]; then
 	echo -e "\n[ * ] Installing File Manager..."
 	export HOMEDIR='/home'
-	export APP_NAME='MiniPanel'
+	export APP_NAME='Hestia-Mini'
 	# v-add-sys-filemanager needs ROOT_USER's home directory and Composer;
 	# it will install Composer for that user automatically if missing.
 	if [ ! -d "/home/admin" ]; then
@@ -925,7 +927,7 @@ else
 fi
 
 echo -e "\n====================================================="
-echo -e "  MiniPanel has been installed successfully!"
+echo -e "  Hestia-Mini has been installed successfully!"
 echo -e "\n"
 echo -e "  Admin URL:  https://$(hostname):$port"
 echo -e "  Username:   admin"

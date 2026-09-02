@@ -1,0 +1,1 @@
+hestia-mini-uninstall.sh
