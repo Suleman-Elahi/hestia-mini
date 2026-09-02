@@ -514,6 +514,40 @@ fi
 sed -i "s/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/g" /etc/locale.gen 2>/dev/null
 locale-gen > /dev/null 2>&1
 
+# Pre-create mailname and exim4 configuration to prevent non-interactive exim4-config failures
+if [ ! -f /etc/mailname ]; then
+	(hostname -f 2>/dev/null || hostname) > /etc/mailname
+fi
+mkdir -p /etc/exim4
+if [ ! -f /etc/exim4/update-exim4.conf.conf ]; then
+	cat > /etc/exim4/update-exim4.conf.conf << 'EOF'
+dc_eximconfig_configtype='internet'
+dc_other_hostnames=''
+dc_local_interfaces='127.0.0.1 ; ::1'
+dc_readhost=''
+dc_relay_domains=''
+dc_minimaldns='false'
+dc_relay_nets=''
+dc_smarthost=''
+CFILEMODE='0644'
+dc_use_readhost='false'
+dc_hide_mailname=''
+dc_mailname_in_oh='true'
+dc_localdelivery='mail_spool'
+EOF
+fi
+
+if command -v debconf-set-selections > /dev/null 2>&1; then
+	echo "exim4-config exim4/dc_eximconfig_configtype select internet site; mail is sent and received directly using SMTP" | debconf-set-selections 2>/dev/null || true
+	echo "exim4-config exim4/mailname string $(cat /etc/mailname 2>/dev/null || hostname)" | debconf-set-selections 2>/dev/null || true
+	echo "exim4-config exim4/no_config boolean true" | debconf-set-selections 2>/dev/null || true
+	echo "exim4-config exim4/use_split_config boolean false" | debconf-set-selections 2>/dev/null || true
+fi
+
+# Fix any broken dpkg state from previous attempts before starting installation
+dpkg --configure -a >> "$LOG" 2>&1 || true
+apt-get -f install -y >> "$LOG" 2>&1 || true
+
 # Disable daemon autostart during apt-get install (matches original HestiaCP)
 echo -e '#!/bin/sh\nexit 101' > /usr/sbin/policy-rc.d
 chmod a+x /usr/sbin/policy-rc.d
