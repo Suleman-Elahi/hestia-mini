@@ -308,6 +308,42 @@ KEY_EOF
 	return 1
 }
 
+install_sury_key() {
+	mkdir -p /usr/share/keyrings /etc/apt/sources.list.d
+	local downloaded='no'
+	rm -f /tmp/sury_key.asc /tmp/sury_key.gpg
+
+	for url in "https://packages.sury.org/php/apt.gpg"; do
+		if command -v curl > /dev/null 2>&1; then
+			if curl -4 -fsSL --retry 3 "$url" -o /tmp/sury_key.asc 2>> "$LOG" || curl -fsSL --retry 3 "$url" -o /tmp/sury_key.asc 2>> "$LOG"; then
+				downloaded='yes'
+				break
+			fi
+		elif command -v wget > /dev/null 2>&1; then
+			if wget -4 -qO /tmp/sury_key.asc "$url" 2>> "$LOG" || wget -qO /tmp/sury_key.asc "$url" 2>> "$LOG"; then
+				downloaded='yes'
+				break
+			fi
+		fi
+	done
+
+	if [ "$downloaded" = 'yes' ] && [ -s /tmp/sury_key.asc ]; then
+		if command -v gpg > /dev/null 2>&1; then
+			gpg --batch --yes --dearmor -o /tmp/sury_key.gpg /tmp/sury_key.asc 2>> "$LOG"
+			if [ -f /tmp/sury_key.gpg ] && [ -s /tmp/sury_key.gpg ]; then
+				mv -f /tmp/sury_key.gpg /usr/share/keyrings/sury-keyring.gpg
+			else
+				cp -f /tmp/sury_key.asc /usr/share/keyrings/sury-keyring.gpg
+			fi
+		else
+			cp -f /tmp/sury_key.asc /usr/share/keyrings/sury-keyring.gpg
+		fi
+		rm -f /tmp/sury_key.asc /tmp/sury_key.gpg
+		return 0
+	fi
+	return 1
+}
+
 #----------------------------------------------------------#
 #                    Pre-flight checks                      #
 #----------------------------------------------------------#
@@ -480,9 +516,13 @@ apt-get -qq update >> "$LOG" 2>&1
 apt-get -y install $installer_dependencies >> "$LOG" 2>&1
 check_result $? "Failed to install installer dependencies"
 
-# Add Hestia repository and GPG keyring
-echo -e "\n[ * ] Adding Hestia repository..."
+# Add PHP (Ondřej Surý) and Hestia repositories
+echo -e "\n[ * ] Adding PHP and Hestia repositories..."
 mkdir -p /usr/share/keyrings /etc/apt/sources.list.d
+
+if install_sury_key; then
+	echo "deb [signed-by=/usr/share/keyrings/sury-keyring.gpg] https://packages.sury.org/php/ $codename main" > /etc/apt/sources.list.d/php.list
+fi
 
 if ! install_hestia_key; then
 	check_result 1 "Failed to install the Hestia repository key."
@@ -491,7 +531,7 @@ fi
 echo "deb [signed-by=/usr/share/keyrings/hestia-keyring.gpg] https://apt.hestiacp.com/ $codename main" > /etc/apt/sources.list.d/hestia.list
 
 apt-get -qq update >> "$LOG" 2>&1
-check_result $? "Failed to update package index after adding Hestia repository."
+check_result $? "Failed to update package index after adding repositories."
 
 # Install Hestia-Mini software in background with animated spinner (matches original HestiaCP)
 echo -e "\n[ * ] Installing Hestia-Mini software packages..."
