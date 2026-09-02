@@ -10,6 +10,9 @@
 
 export PATH=$PATH:/sbin
 export DEBIAN_FRONTEND=noninteractive
+unset LC_ALL LC_CTYPE LC_NUMERIC LC_TIME LC_COLLATE LC_MONETARY LC_MESSAGES LC_PAPER LC_NAME LC_ADDRESS LC_TELEPHONE LC_MEASUREMENT LC_IDENTIFICATION LANGUAGE
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
 HESTIA='/usr/local/hestia'
 LOG="/root/hestia_mini_install-$(date +%d%m%Y%H%M).log"
 spinner="/\-|"
@@ -510,8 +513,9 @@ fi
 #                    Install software                       #
 #----------------------------------------------------------#
 
-# Generate locale to suppress locale warnings during apt install
+# Generate locales to suppress locale warnings during apt install
 sed -i "s/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/g" /etc/locale.gen 2>/dev/null
+sed -i "s/# en_IN.UTF-8 UTF-8/en_IN.UTF-8 UTF-8/g" /etc/locale.gen 2>/dev/null
 locale-gen > /dev/null 2>&1
 
 # Pre-create mailname and exim4 configuration to prevent non-interactive exim4-config failures
