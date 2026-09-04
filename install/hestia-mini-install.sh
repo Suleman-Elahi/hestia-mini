@@ -575,39 +575,26 @@ sed -i "s/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/g" /etc/locale.gen 2>/dev/null
 sed -i "s/# en_IN.UTF-8 UTF-8/en_IN.UTF-8 UTF-8/g" /etc/locale.gen 2>/dev/null
 locale-gen > /dev/null 2>&1
 
-# Pre-create mailname and exim4 configuration to prevent non-interactive exim4-config failures
+# Let exim4-config create and own its initial configuration. Pre-creating
+# /etc/exim4 files before its post-install script runs can leave dpkg unable to
+# configure the Exim package chain.
 if [ ! -f /etc/mailname ]; then
 	(hostname -f 2>/dev/null || hostname) > /etc/mailname
 fi
-mkdir -p /etc/exim4
-if [ ! -f /etc/exim4/update-exim4.conf.conf ]; then
-	cat > /etc/exim4/update-exim4.conf.conf << 'EOF'
-dc_eximconfig_configtype='internet'
-dc_other_hostnames=''
-dc_local_interfaces='127.0.0.1 ; ::1'
-dc_readhost=''
-dc_relay_domains=''
-dc_minimaldns='false'
-dc_relay_nets=''
-dc_smarthost=''
-CFILEMODE='0644'
-dc_use_readhost='false'
-dc_hide_mailname=''
-dc_mailname_in_oh='true'
-dc_localdelivery='mail_spool'
-EOF
-fi
-
 if command -v debconf-set-selections > /dev/null 2>&1; then
-	echo "exim4-config exim4/dc_eximconfig_configtype select internet site; mail is sent and received directly using SMTP" | debconf-set-selections 2>/dev/null || true
-	echo "exim4-config exim4/mailname string $(cat /etc/mailname 2>/dev/null || hostname)" | debconf-set-selections 2>/dev/null || true
-	echo "exim4-config exim4/no_config boolean true" | debconf-set-selections 2>/dev/null || true
-	echo "exim4-config exim4/use_split_config boolean false" | debconf-set-selections 2>/dev/null || true
+	echo "exim4-config exim4/dc_eximconfig_configtype select internet site; mail is sent and received directly using SMTP" | debconf-set-selections
+	echo "exim4-config exim4/mailname string $(cat /etc/mailname)" | debconf-set-selections
+	echo "exim4-config exim4/no_config boolean false" | debconf-set-selections
+	echo "exim4-config exim4/use_split_config boolean false" | debconf-set-selections
+	check_result $? "Failed to preseed Exim package configuration"
 fi
 
-# Fix any broken dpkg state from previous attempts before starting installation
-dpkg --configure -a >> "$LOG" 2>&1 || true
-apt-get -f install -y >> "$LOG" 2>&1 || true
+# A partially configured package database must be repaired before installing
+# Mini. Do not hide this failure: its output is required to diagnose the host.
+dpkg --configure -a >> "$LOG" 2>&1
+check_result $? "Failed to configure existing packages. Check details in: $LOG"
+apt-get -f install -y >> "$LOG" 2>&1
+check_result $? "Failed to repair package dependencies. Check details in: $LOG"
 
 # Disable daemon autostart during apt-get install (matches original HestiaCP)
 echo -e '#!/bin/sh\nexit 101' > /usr/sbin/policy-rc.d
@@ -650,19 +637,6 @@ check_result $? "Failed to update package index after adding repositories."
 # Install Hestia-Mini software in background with animated spinner (matches original HestiaCP)
 echo -e "\n[ * ] Installing Hestia-Mini software packages..."
 echo "  NOTE: This process may take 5 to 15 minutes. Please wait..."
-
-# Preseed debconf for exim4 to prevent non-interactive configuration failures
-if [ ! -f /etc/mailname ]; then
-	(hostname -f 2>/dev/null || hostname) > /etc/mailname
-fi
-if command -v debconf-set-selections > /dev/null 2>&1; then
-	echo "exim4-config exim4/dc_eximconfig_configtype select internet site; mail is sent and received directly using SMTP" | debconf-set-selections 2>/dev/null || true
-	echo "exim4-config exim4/mailname string $(cat /etc/mailname 2>/dev/null || hostname)" | debconf-set-selections 2>/dev/null || true
-	echo "exim4-config exim4/no_config boolean true" | debconf-set-selections 2>/dev/null || true
-fi
-
-# Fix any broken/unconfigured packages from previous failed attempts
-dpkg --configure -a >> "$LOG" 2>&1 || true
 
 if [ "$PGSQL_ENABLE" = 'yes' ]; then
 	software="$software postgresql postgresql-contrib php${fpm_v}-pgsql"
@@ -836,12 +810,16 @@ echo -e "\n[ * ] Configuring Exim (mail transfer agent)..."
 gpasswd -a Debian-exim mail > /dev/null 2>&1
 if [ -d "$HESTIA_INSTALL_DIR/exim" ]; then
 	mkdir -p /etc/exim4/domains /etc/exim4/domains_debug
-	cp -f $HESTIA_INSTALL_DIR/exim/exim4.conf.template /etc/exim4/exim4.conf.template 2>> $LOG
-	cp -f $HESTIA_INSTALL_DIR/exim/dnsbl.conf /etc/exim4/dnsbl.conf 2>> $LOG
-	cp -f $HESTIA_INSTALL_DIR/exim/spam-blocks.conf /etc/exim4/spam-blocks.conf 2>> $LOG
-	cp -f $HESTIA_INSTALL_DIR/exim/limit.conf /etc/exim4/limit.conf 2>> $LOG
-	cp -f $HESTIA_INSTALL_DIR/exim/system.filter /etc/exim4/system.filter 2>> $LOG
-	update-exim4.conf > /dev/null 2>&1
+	cp -f "$HESTIA_INSTALL_DIR/exim/exim4.conf.template" /etc/exim4/exim4.conf.template 2>> "$LOG"
+	cp -f "$HESTIA_INSTALL_DIR/exim/dnsbl.conf" /etc/exim4/dnsbl.conf 2>> "$LOG"
+	cp -f "$HESTIA_INSTALL_DIR/exim/spam-blocks.conf" /etc/exim4/spam-blocks.conf 2>> "$LOG"
+	cp -f "$HESTIA_INSTALL_DIR/exim/limit.conf" /etc/exim4/limit.conf 2>> "$LOG"
+	cp -f "$HESTIA_INSTALL_DIR/exim/system.filter" /etc/exim4/system.filter 2>> "$LOG"
+	touch /etc/exim4/white-blocks.conf
+	update-exim4.conf >> "$LOG" 2>&1
+	check_result $? "Failed to generate the Exim configuration. Check details in: $LOG"
+	exim4 -bP >> "$LOG" 2>&1
+	check_result $? "Exim configuration validation failed. Check details in: $LOG"
 fi
 
 echo -e "\n[ * ] Configuring Dovecot (IMAP/POP3)..."
@@ -1212,7 +1190,7 @@ fi
 echo -e "\n[ * ] Starting services..."
 
 systemctl enable exim4 2>/dev/null
-systemctl start exim4 2>/dev/null
+systemctl start exim4 >> "$LOG" 2>&1
 check_result $? "Failed to start Exim"
 
 systemctl enable dovecot 2>/dev/null
