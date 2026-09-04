@@ -590,6 +590,20 @@ if [ -f "$legacy_exim_config" ] &&
 	echo "[ ! ] Removed legacy Mini Exim configuration; backup: $legacy_exim_backup"
 fi
 
+# A legacy interrupted install can leave exim4-config selected for an unsplit
+# configuration but without the template it requires. This template is only a
+# recovery bridge for an already-unpacked package; Mini replaces it with the
+# Hestia template after the package transaction completes.
+if dpkg-query -W -f='${db:Status-Status}' exim4-config 2>/dev/null | grep -Eq 'unpacked|half-configured' &&
+	[ ! -f /etc/exim4/exim4.conf.template ]; then
+	debian_exim_template='/usr/share/doc/exim4-base/examples/example.conf.gz'
+	[ -f "$debian_exim_template" ] || check_result 1 "Missing Debian Exim recovery template: $debian_exim_template"
+	mkdir -p /etc/exim4
+	zcat "$debian_exim_template" > /etc/exim4/exim4.conf.template
+	check_result $? "Failed to restore the Debian Exim recovery template"
+	echo "[ ! ] Restored missing Exim template so dpkg can complete configuration"
+fi
+
 if [ ! -f /etc/mailname ]; then
 	(hostname -f 2>/dev/null || hostname) > /etc/mailname
 fi

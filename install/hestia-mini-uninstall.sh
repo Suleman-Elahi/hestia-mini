@@ -257,11 +257,9 @@ run systemctl reload nginx 2> /dev/null
 #                Remove Dovecot/Exim configuration            #
 #----------------------------------------------------------#
 
-echo -e "\n[ * ] Removing Exim/Dovecot configuration written by MiniPanel..."
-run rm -f /etc/exim4/exim4.conf.template /etc/exim4/dnsbl.conf \
-	/etc/exim4/spam-blocks.conf /etc/exim4/limit.conf /etc/exim4/system.filter
-run rm -rf /etc/dovecot/conf.d/domains
-run rm -f /etc/dovecot/dovecot.conf
+# Exim and Dovecot configuration is handled after package cleanup. Removing
+# /etc/exim4/exim4.conf.template before exim4-config is purged can leave a
+# retained or partially configured Exim package unusable.
 
 #----------------------------------------------------------#
 #                    Remove panel software                   #
@@ -284,7 +282,7 @@ if [ "$KEEP_PACKAGES" != 'yes' ]; then
 	echo -e "\n[ * ] Purging underlying service packages..."
 	echo -e "${YELLOW}      (mariadb-server/mysql-server/postgresql are only purged if --keep-data is not set)${NC}"
 
-	pkgs_always="hestia hestia-nginx hestia-php hestia-web-terminal nodejs clamav-daemon spamd spamassassin exim4 exim4-daemon-heavy
+	pkgs_always="hestia hestia-nginx hestia-php hestia-web-terminal nodejs clamav-daemon spamd spamassassin exim4 exim4-base exim4-config exim4-daemon-heavy bsd-mailx
 	  dovecot-imapd dovecot-managesieved dovecot-pop3d dovecot-sieve"
 
 	pkgs_with_data="mariadb-server mariadb-client mariadb-common mysql-server mysql-client
@@ -294,6 +292,7 @@ if [ "$KEEP_PACKAGES" != 'yes' ]; then
 		echo "  [dry-run] apt-get -y purge $pkgs_always"
 	else
 		apt-get -y purge $pkgs_always >> "$LOG" 2>&1
+		check_result $? "Failed to purge service packages. Check details in: $LOG"
 	fi
 
 	if [ "$KEEP_DATA" != 'yes' ]; then
@@ -302,6 +301,7 @@ if [ "$KEEP_PACKAGES" != 'yes' ]; then
 			echo "  [dry-run] rm -rf /var/lib/mysql /var/lib/postgresql"
 		else
 			apt-get -y purge $pkgs_with_data >> "$LOG" 2>&1
+			check_result $? "Failed to purge database packages. Check details in: $LOG"
 			rm -rf /var/lib/mysql /var/lib/postgresql
 		fi
 	else
@@ -309,9 +309,32 @@ if [ "$KEEP_PACKAGES" != 'yes' ]; then
 		echo "  and their data directories (/var/lib/mysql, /var/lib/postgresql) installed."
 	fi
 
-	run apt-get -y autoremove
+	if [ "$DRY_RUN" = 'yes' ]; then
+		echo "  [dry-run] apt-get -y autoremove"
+	else
+		apt-get -y autoremove >> "$LOG" 2>&1
+		check_result $? "Failed to autoremove unused packages. Check details in: $LOG"
+	fi
+
+	echo -e "\n[ * ] Removing Exim/Dovecot configuration written by MiniPanel..."
+	run rm -f /etc/exim4/exim4.conf.template /etc/exim4/dnsbl.conf \
+		/etc/exim4/spam-blocks.conf /etc/exim4/limit.conf /etc/exim4/system.filter /etc/exim4/white-blocks.conf
+	run rm -rf /etc/dovecot/conf.d/domains
+	run rm -f /etc/dovecot/dovecot.conf
 else
-	echo -e "\n[ * ] --keep-packages set: leaving all service packages installed."
+	echo -e "\n[ * ] --keep-packages set: restoring a valid Debian Exim template."
+	if [ "$DRY_RUN" = 'yes' ]; then
+		echo "  [dry-run] restore /etc/exim4/exim4.conf.template from Debian example"
+	else
+		debian_exim_template='/usr/share/doc/exim4-base/examples/example.conf.gz'
+		[ -f "$debian_exim_template" ] || check_result 1 "Missing Debian Exim template: $debian_exim_template"
+		zcat "$debian_exim_template" > /etc/exim4/exim4.conf.template
+		check_result $? "Failed to restore the Debian Exim template"
+		rm -f /etc/exim4/dnsbl.conf /etc/exim4/spam-blocks.conf /etc/exim4/limit.conf /etc/exim4/system.filter /etc/exim4/white-blocks.conf
+		update-exim4.conf >> "$LOG" 2>&1
+		check_result $? "Failed to regenerate the retained Exim configuration. Check details in: $LOG"
+	fi
+	echo "  Dovecot configuration is retained because its packages remain installed."
 fi
 
 #----------------------------------------------------------#
