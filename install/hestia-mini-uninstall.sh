@@ -74,6 +74,18 @@ run() {
 	fi
 }
 
+check_result() {
+	local status=$1
+	local message=$2
+
+	if [ "$status" -ne 0 ]; then
+		echo -e "[${RED} FAILED ${NC}]"
+		echo "  Error: $message"
+		echo "  Details: $LOG"
+		exit "$status"
+	fi
+}
+
 say() {
 	echo -e "$1"
 }
