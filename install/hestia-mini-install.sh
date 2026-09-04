@@ -575,9 +575,21 @@ sed -i "s/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/g" /etc/locale.gen 2>/dev/null
 sed -i "s/# en_IN.UTF-8 UTF-8/en_IN.UTF-8 UTF-8/g" /etc/locale.gen 2>/dev/null
 locale-gen > /dev/null 2>&1
 
-# Let exim4-config create and own its initial configuration. Pre-creating
-# /etc/exim4 files before its post-install script runs can leave dpkg unable to
-# configure the Exim package chain.
+# Let exim4-config create and own its initial configuration. Older Mini
+# installers wrote an incomplete package-owned file before exim4-config ran.
+# Migrate only that exact legacy signature, keeping a dated recovery copy.
+legacy_exim_config='/etc/exim4/update-exim4.conf.conf'
+if [ -f "$legacy_exim_config" ] &&
+	grep -Fqx "dc_eximconfig_configtype='internet'" "$legacy_exim_config" &&
+	grep -Fqx "dc_local_interfaces='127.0.0.1 ; ::1'" "$legacy_exim_config" &&
+	! grep -Fq 'dc_use_split_config=' "$legacy_exim_config"; then
+	legacy_exim_backup="/root/hestia_mini_legacy_exim4_config-$(date +%d%m%Y%H%M%S).conf"
+	cp -a "$legacy_exim_config" "$legacy_exim_backup"
+	check_result $? "Failed to back up legacy Exim configuration"
+	rm -f "$legacy_exim_config"
+	echo "[ ! ] Removed legacy Mini Exim configuration; backup: $legacy_exim_backup"
+fi
+
 if [ ! -f /etc/mailname ]; then
 	(hostname -f 2>/dev/null || hostname) > /etc/mailname
 fi
@@ -654,7 +666,13 @@ done
 echo -ne '\b\b\b\b\b\b'
 
 wait $BACK_PID
-check_result $? "Failed to install required software packages. Check details in: $LOG"
+install_status=$?
+if [ "$install_status" -ne 0 ]; then
+	rm -f /usr/sbin/policy-rc.d
+	echo -e "\n[ ! ] Package manager diagnostics (last 120 log lines):"
+	tail -n 120 "$LOG"
+	check_result "$install_status" "Failed to install required software packages. Check details in: $LOG"
+fi
 
 # Restore service autostart policy
 rm -f /usr/sbin/policy-rc.d
