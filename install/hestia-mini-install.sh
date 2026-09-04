@@ -848,28 +848,20 @@ echo -e "\n[ * ] Configuring Dovecot (IMAP/POP3)..."
 gpasswd -a dovecot mail > /dev/null 2>&1
 mkdir -p /etc/dovecot/conf.d/domains
 dovecot_version="$(dovecot --version 2> /dev/null | cut -f -2 -d .)"
-if [ "$dovecot_version" = "2.4" ] && [ -d "$HESTIA_COMMON_DIR/dovecot/2.4" ]; then
-	cp -f $HESTIA_COMMON_DIR/dovecot/2.4/dovecot.conf /etc/dovecot/ 2>> $LOG
-	cp -f $HESTIA_COMMON_DIR/dovecot/2.4/conf.d/* /etc/dovecot/conf.d/ 2>> $LOG
-elif [ -d "$HESTIA_COMMON_DIR/dovecot/2.3" ]; then
-	cp -f $HESTIA_COMMON_DIR/dovecot/2.3/dovecot.conf /etc/dovecot/ 2>> $LOG
-	cp -f $HESTIA_COMMON_DIR/dovecot/2.3/conf.d/* /etc/dovecot/conf.d/ 2>> $LOG
+if [ "$dovecot_version" = "2.4" ]; then
+	[ -d "$HESTIA_COMMON_DIR/dovecot/2.4" ] || check_result 1 "Dovecot 2.4 templates are missing"
+	cp -f "$HESTIA_COMMON_DIR/dovecot/2.4/dovecot.conf" /etc/dovecot/ 2>> "$LOG"
+	cp -f "$HESTIA_COMMON_DIR/dovecot/2.4/conf.d/"* /etc/dovecot/conf.d/ 2>> "$LOG"
+else
+	[ -d "$HESTIA_COMMON_DIR/dovecot/2.3" ] || check_result 1 "Dovecot 2.3 templates are missing"
+	cp -f "$HESTIA_COMMON_DIR/dovecot/2.3/dovecot.conf" /etc/dovecot/ 2>> "$LOG"
+	cp -f "$HESTIA_COMMON_DIR/dovecot/2.3/conf.d/"* /etc/dovecot/conf.d/ 2>> "$LOG"
 	rm -f /etc/dovecot/conf.d/15-mailboxes.conf
 fi
-chown -R root:root /etc/dovecot* 2>> $LOG
+chown -R root:root /etc/dovecot* 2>> "$LOG"
 touch /var/log/dovecot.log
 chown dovecot:mail /var/log/dovecot.log
 chmod 660 /var/log/dovecot.log
-
-# Ensure SSL certs exist for dovecot (snakeoil default certs)
-if [ ! -f /etc/ssl/certs/ssl-cert-snakeoil.pem ] || [ ! -f /etc/ssl/private/ssl-cert-snakeoil.key ]; then
-	mkdir -p /etc/ssl/certs /etc/ssl/private
-	openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-		-keyout /etc/ssl/private/ssl-cert-snakeoil.key \
-		-out /etc/ssl/certs/ssl-cert-snakeoil.pem \
-		-subj "/CN=$(hostname)" > /dev/null 2>&1
-	chmod 600 /etc/ssl/private/ssl-cert-snakeoil.key
-fi
 
 echo -e "\n[ * ] Configuring ClamAV (antivirus)..."
 systemctl enable clamav-daemon 2>/dev/null
@@ -1132,8 +1124,32 @@ chown hestiaweb:hestiaweb /var/spool/cron/crontabs/hestiaweb
 #----------------------------------------------------------#
 
 echo -e "\n[ * ] Generating self-signed SSL certificate..."
-$HESTIA/bin/v-generate-ssl-cert "$(hostname -f 2>/dev/null || hostname)" "$ADMIN_EMAIL" 'US' 'California' 'San Francisco' 'Hestia Control Panel' 'IT' >> "$LOG" 2>&1
+ssl_bundle=$(mktemp)
+$HESTIA/bin/v-generate-ssl-cert "$(hostname -f 2>/dev/null || hostname)" "$ADMIN_EMAIL" 'US' 'California' 'San Francisco' 'Hestia Control Panel' 'IT' > "$ssl_bundle" 2>> "$LOG"
+check_result $? "Failed to generate the default SSL certificate"
 
+crt_end=$(grep -n "END CERTIFICATE-" "$ssl_bundle" | head -n1 | cut -f1 -d:)
+key_start=$(grep -nE "BEGIN (RSA |EC |ENCRYPTED )?PRIVATE KEY" "$ssl_bundle" | head -n1 | cut -f1 -d:)
+key_end=$(grep -nE "END (RSA |EC |ENCRYPTED )?PRIVATE KEY" "$ssl_bundle" | head -n1 | cut -f1 -d:)
+if [ -z "$crt_end" ] || [ -z "$key_start" ] || [ -z "$key_end" ]; then
+	rm -f "$ssl_bundle"
+	check_result 1 "Failed to parse the generated SSL certificate"
+fi
+
+mkdir -p "$HESTIA/ssl"
+sed -n "1,${crt_end}p" "$ssl_bundle" > "$HESTIA/ssl/certificate.crt"
+sed -n "${key_start},${key_end}p" "$ssl_bundle" > "$HESTIA/ssl/certificate.key"
+openssl x509 -noout -in "$HESTIA/ssl/certificate.crt" >> "$LOG" 2>&1
+check_result $? "Generated SSL certificate is invalid"
+openssl pkey -noout -in "$HESTIA/ssl/certificate.key" >> "$LOG" 2>&1
+check_result $? "Generated SSL private key is invalid"
+chown root:mail "$HESTIA/ssl/certificate.crt" "$HESTIA/ssl/certificate.key"
+chmod 660 "$HESTIA/ssl/certificate.crt" "$HESTIA/ssl/certificate.key"
+rm -f "$ssl_bundle"
+
+[ -f "$HESTIA_INSTALL_DIR/ssl/dhparam.pem" ] || check_result 1 "Dovecot DH parameters are missing"
+install -o root -g root -m 644 "$HESTIA_INSTALL_DIR/ssl/dhparam.pem" /etc/ssl/dhparam.pem
+check_result $? "Failed to install Dovecot DH parameters"
 #----------------------------------------------------------#
 #                Create admin user                          #
 #----------------------------------------------------------#
@@ -1200,7 +1216,9 @@ systemctl start exim4 2>/dev/null
 check_result $? "Failed to start Exim"
 
 systemctl enable dovecot 2>/dev/null
-systemctl start dovecot 2>/dev/null
+doveconf -n >> "$LOG" 2>&1
+check_result $? "Dovecot configuration validation failed - check $LOG"
+systemctl start dovecot >> "$LOG" 2>&1
 check_result $? "Failed to start Dovecot"
 
 systemctl enable nginx 2>/dev/null
