@@ -13,6 +13,8 @@ export DEBIAN_FRONTEND=noninteractive
 unset LC_ALL LC_CTYPE LC_NUMERIC LC_TIME LC_COLLATE LC_MONETARY LC_MESSAGES LC_PAPER LC_NAME LC_ADDRESS LC_TELEPHONE LC_MEASUREMENT LC_IDENTIFICATION LANGUAGE
 export LANG=C.UTF-8
 export LC_ALL=C.UTF-8
+RHOST='apt.hestiacp.com'
+VERSION='debian'
 HESTIA='/usr/local/hestia'
 LOG="/root/hestia_mini_install-$(date +%d%m%Y%H%M).log"
 spinner="/\-|"
@@ -33,6 +35,26 @@ MINIPANEL_SRC="$HESTIA_MINI_SRC"
 # Define software versions
 HESTIA_MINI_VERSION='1.0.0'
 MINIPANEL_VERSION="$HESTIA_MINI_VERSION"
+HESTIA_INSTALL_VER='1.10.4'
+
+case "$os" in
+	ubuntu)
+		os_id="ubuntu${release}"
+		;;
+	debian)
+		os_id="debian${release}"
+		;;
+	*)
+		os_id=''
+		;;
+esac
+HESTIA_BASE_VER="${HESTIA_INSTALL_VER%%~*}"
+if [[ "$HESTIA_INSTALL_VER" == *"~"* ]]; then
+	HESTIA_CHANNEL="~${HESTIA_INSTALL_VER#*~}"
+else
+	HESTIA_CHANNEL=""
+fi
+HESTIA_INSTALL_BUILD="${HESTIA_BASE_VER}-1+${os_id}${HESTIA_CHANNEL}"
 
 # Supported PHP version (also used for phpMyAdmin/phpPgAdmin/panel PHP-FPM pool)
 fpm_v="8.2"
@@ -49,8 +71,8 @@ fm_v="7.15.1"
 # Defining software pack - minimal: mail + database (MySQL/MariaDB) + file manager
 software="acl apt-transport-https ca-certificates clamav-daemon cron curl dovecot-imapd
   dovecot-managesieved dovecot-pop3d dovecot-sieve exim4 exim4-daemon-heavy expect
-  git hestia-nginx hestia-php jq libmail-dkim-perl lsb-release mariadb-client
-  mariadb-common mariadb-server mc net-tools
+  git hestia=${HESTIA_INSTALL_BUILD} hestia-nginx hestia-php hestia-web-terminal jq libmail-dkim-perl lsb-release
+  mariadb-client mariadb-common mariadb-server mc net-tools nodejs
   nginx php${fpm_v} php${fpm_v}-apcu php${fpm_v}-bcmath php${fpm_v}-bz2 php${fpm_v}-cgi
   php${fpm_v}-cli php${fpm_v}-common php${fpm_v}-curl php${fpm_v}-gd php${fpm_v}-imagick
   php${fpm_v}-imap php${fpm_v}-intl php${fpm_v}-ldap php${fpm_v}-mbstring
@@ -221,9 +243,12 @@ port_in_use() {
 }
 
 sort_config_file() {
-	local config_file="$HESTIA/conf/minipanel.conf"
+	local config_file="$HESTIA/conf/hestia.conf"
 	if [ -f "$config_file" ]; then
 		sort "$config_file" -o "$config_file"
+	fi
+	if [ -f "$config_file" ] && [ ! -e "$HESTIA/conf/minipanel.conf" ]; then
+		ln -sf "$config_file" "$HESTIA/conf/minipanel.conf"
 	fi
 }
 
@@ -357,6 +382,24 @@ install_sury_key() {
 	return 1
 }
 
+install_node_key() {
+	mkdir -p /usr/share/keyrings /etc/apt/sources.list.d
+	rm -f /tmp/nodejs_key.asc /tmp/nodejs_key.gpg
+
+	if curl -4 -fsSL --retry 3 https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key -o /tmp/nodejs_key.asc 2>> "$LOG" ||
+		curl -fsSL --retry 3 https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key -o /tmp/nodejs_key.asc 2>> "$LOG"; then
+		gpg --batch --yes --dearmor -o /tmp/nodejs_key.gpg /tmp/nodejs_key.asc 2>> "$LOG"
+		if [ -s /tmp/nodejs_key.gpg ]; then
+			mv -f /tmp/nodejs_key.gpg /usr/share/keyrings/nodejs.gpg
+			rm -f /tmp/nodejs_key.asc
+			return 0
+		fi
+	fi
+
+	rm -f /tmp/nodejs_key.asc /tmp/nodejs_key.gpg
+	return 1
+}
+
 #----------------------------------------------------------#
 #                    Pre-flight checks                      #
 #----------------------------------------------------------#
@@ -377,12 +420,12 @@ fi
 # OS check
 if [ "$os" != "debian" ] && [ "$os" != "ubuntu" ]; then
 	echo -e "${RED}Error: Unsupported OS: $os${NC}"
-	echo "  Supported: Debian 12/13, Ubuntu 22.04/24.04/26.04"
+	echo "  Supported: Debian 11/12/13, Ubuntu 22.04/24.04/26.04"
 	exit 1
 fi
 
-if [ "$os" = "debian" ] && [ "$release" != "12" ] && [ "$release" != "13" ]; then
-	echo -e "${YELLOW}Warning: Debian $release is not an officially supported version (12/13).${NC}"
+if [ "$os" = "debian" ] && [ "$release" != "11" ] && [ "$release" != "12" ] && [ "$release" != "13" ]; then
+	echo -e "${YELLOW}Warning: Debian $release is not an officially supported version (11/12/13).${NC}"
 	if [ "$ASSUME_YES" != 'yes' ]; then
 		read -r -p "Continue anyway? [y/N] " reply
 		[[ "$reply" =~ ^[Yy]$ ]] || exit 1
@@ -403,6 +446,20 @@ if [ "$os" = "ubuntu" ]; then
 fi
 
 echo "[ * ] Operating system: $os $release ($codename)"
+
+case $architecture in
+	x86_64)
+		ARCH="amd64"
+		;;
+	aarch64)
+		ARCH="arm64"
+		;;
+	*)
+		echo -e "${RED}Error: unsupported architecture: $architecture${NC}"
+		echo "  Supported: x86_64/amd64 and aarch64/arm64"
+		exit 1
+		;;
+esac
 
 # Port conflict check - panel port
 echo -e "\n[ * ] Checking port conflicts..."
@@ -559,6 +616,10 @@ chmod a+x /usr/sbin/policy-rc.d
 # Clean up any leftover hestia repo list before initial dependency check
 rm -f /etc/apt/sources.list.d/hestia.list /etc/apt/sources.list.d/hestia.list.tmp
 
+if [ "$release" -lt 12 ]; then
+	software=$(echo "$software" | sed -e "s/spamd/spamassassin/g")
+fi
+
 echo -e "\n[ * ] Installing installer dependencies..."
 apt-get -qq update >> "$LOG" 2>&1
 apt-get -y install $installer_dependencies >> "$LOG" 2>&1
@@ -569,14 +630,19 @@ echo -e "\n[ * ] Adding PHP and Hestia repositories..."
 mkdir -p /usr/share/keyrings /etc/apt/sources.list.d
 
 if install_sury_key; then
-	echo "deb [signed-by=/usr/share/keyrings/sury-keyring.gpg] https://packages.sury.org/php/ $codename main" > /etc/apt/sources.list.d/php.list
+	echo "deb [arch=$ARCH signed-by=/usr/share/keyrings/sury-keyring.gpg] https://packages.sury.org/php/ $codename main" > /etc/apt/sources.list.d/php.list
 fi
 
 if ! install_hestia_key; then
 	check_result 1 "Failed to install the Hestia repository key."
 fi
 
-echo "deb [signed-by=/usr/share/keyrings/hestia-keyring.gpg] https://apt.hestiacp.com/ $codename main" > /etc/apt/sources.list.d/hestia.list
+echo "deb [arch=$ARCH signed-by=/usr/share/keyrings/hestia-keyring.gpg] https://$RHOST/ $codename main" > /etc/apt/sources.list.d/hestia.list
+
+if ! install_node_key; then
+	check_result 1 "Failed to install the NodeSource repository key."
+fi
+echo "deb [arch=$ARCH signed-by=/usr/share/keyrings/nodejs.gpg] https://deb.nodesource.com/node_24.x nodistro main" > /etc/apt/sources.list.d/nodejs.list
 
 apt-get -qq update >> "$LOG" 2>&1
 check_result $? "Failed to update package index after adding repositories."
@@ -644,9 +710,8 @@ chown hestiaweb:hestiaweb $HESTIA/data/sessions
 
 # Copy install/ resources (needed at runtime by bin/func scripts and by
 # this installer itself for exim/dovecot/phpmyadmin/phppgadmin/filemanager
-# templates). Prefer the minipanel source tree; if this repo doesn't ship
-# a full install/deb + install/common tree, fall back to a sibling
-# checkout of the upstream hestiacp repo if one is present.
+# templates). Prefer the minipanel source tree, then the base hestia package
+# installed by apt, then a sibling checkout of the upstream hestiacp repo.
 echo "[ * ] Staging install resources..."
 if [ -d "$MINIPANEL_SRC/install/deb" ]; then
 	cp -rf "$MINIPANEL_SRC/install/deb" "$HESTIA/install/" 2>> $LOG
@@ -655,7 +720,6 @@ if [ -d "$MINIPANEL_SRC/install/common" ]; then
 	cp -rf "$MINIPANEL_SRC/install/common" "$HESTIA/install/" 2>> $LOG
 fi
 if [ ! -d "$HESTIA/install/deb/exim" ] || [ ! -d "$HESTIA/install/common/dovecot" ]; then
-	# Fall back to a sibling checkout of the upstream hestiacp tree, if present
 	UPSTREAM_HESTIA_SRC="$(cd "$MINIPANEL_SRC/.." 2> /dev/null && pwd)"
 	if [ -d "$UPSTREAM_HESTIA_SRC/install/deb" ]; then
 		echo "  Using upstream hestiacp install resources from $UPSTREAM_HESTIA_SRC"
@@ -670,7 +734,7 @@ fi
 mkdir -p "$HESTIA/install/upgrade"
 if [ -f "$MINIPANEL_SRC/install/upgrade/upgrade.conf" ]; then
 	cp -f "$MINIPANEL_SRC/install/upgrade/upgrade.conf" "$HESTIA/install/upgrade/" 2>> $LOG
-elif [ -f "$UPSTREAM_HESTIA_SRC/install/upgrade/upgrade.conf" ]; then
+elif [ -n "${UPSTREAM_HESTIA_SRC:-}" ] && [ -f "$UPSTREAM_HESTIA_SRC/install/upgrade/upgrade.conf" ]; then
 	cp -f "$UPSTREAM_HESTIA_SRC/install/upgrade/upgrade.conf" "$HESTIA/install/upgrade/" 2>> $LOG
 fi
 
@@ -707,22 +771,25 @@ if [ -d "$HESTIA/install/common/api" ]; then
 	cp -rf "$HESTIA/install/common/api" "$HESTIA/data/" 2>> $LOG
 fi
 
-# Symlink /etc/hestiacp/hestia.conf -> minipanel.conf (kept bin/func scripts
-# source this fixed path)
+# Keep the upstream bootstrap config path. The inherited bin/func scripts
+# source /etc/hestiacp/hestia.conf first, then read $HESTIA/conf/hestia.conf.
 mkdir -p /etc/hestiacp
-if [ ! -e /etc/hestiacp/hestia.conf ]; then
-	ln -sf $HESTIA/conf/minipanel.conf /etc/hestiacp/hestia.conf
-fi
+cat > /etc/hestiacp/hestia.conf << EOF
+# Do not edit this file, it can be overwritten on upgrade.
+export HESTIA='$HESTIA'
+[[ -f /etc/hestiacp/local.conf ]] && source /etc/hestiacp/local.conf
+EOF
 
-# Create minipanel.conf
+# Create hestia.conf and a backward-compatible minipanel.conf symlink
 echo -e "\n[ * ] Creating configuration..."
 if [ -z "$ADMIN_EMAIL" ]; then
 	ADMIN_EMAIL="admin@$(hostname -f 2> /dev/null || hostname)"
 fi
-cat > $HESTIA/conf/minipanel.conf << EOF
+rm -f "$HESTIA/conf/minipanel.conf"
+cat > $HESTIA/conf/hestia.conf << EOF
 MAIL_SYSTEM='exim'
 ANTIVIRUS_SYSTEM='clamav-daemon'
-ANTISPAM_SYSTEM='spamassassin'
+ANTISPAM_SYSTEM='$([ "$release" -lt 12 ] && echo 'spamassassin' || echo 'spamd')'
 IMAP_SYSTEM='dovecot'
 DB_SYSTEM='mysql$([ "$PGSQL_ENABLE" = 'yes' ] && echo ',pgsql')'
 DB_PGSQL_SYSTEM='$([ "$PGSQL_ENABLE" = 'yes' ] && echo 'pgsql')'
@@ -756,7 +823,10 @@ SERVER_SMTP_PORT='465'
 SERVER_SMTP_USER=''
 SERVER_SMTP_PASSWD=''
 SERVER_SMTP_SECURITY='ssl'
+WEB_TERMINAL='true'
+WEB_TERMINAL_PORT='8085'
 EOF
+ln -sf "$HESTIA/conf/hestia.conf" "$HESTIA/conf/minipanel.conf"
 
 #----------------------------------------------------------#
 #                Configure Mail Services                    #
@@ -806,7 +876,11 @@ systemctl enable clamav-daemon 2>/dev/null
 freshclam > /dev/null 2>&1 &
 
 echo -e "\n[ * ] Configuring SpamAssassin (antispam)..."
-systemctl enable spamd 2>/dev/null
+if [ "$release" -lt 12 ]; then
+	systemctl enable spamassassin 2>/dev/null
+else
+	systemctl enable spamd 2>/dev/null
+fi
 
 #----------------------------------------------------------#
 #               Configure Database Services                 #
@@ -881,7 +955,7 @@ if [ "$PMA_INSTALL" = 'yes' ]; then
 
 		# Create pmadb + control user (phpmyadmin-fixer, adapted from
 		# install/deb/phpmyadmin/pma.sh)
-		pma_ctl_pass=$(gen_pass 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789' '24')
+		pma_ctl_pass=$(gen_pass '24' 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789')
 		mysql_cmd="mysql"
 		command -v mariadb > /dev/null 2>&1 && mysql_cmd="mariadb"
 		$mysql_cmd -uroot -e "CREATE DATABASE IF NOT EXISTS phpmyadmin;" >> $LOG 2>&1
@@ -1048,7 +1122,6 @@ CONTENT_TYPE="text/plain; charset=utf-8"
 10 00 * * * sudo /usr/local/hestia/bin/v-update-sys-queue daily
 15 02 * * * sudo /usr/local/hestia/bin/v-update-sys-queue disk
 10 00 * * * sudo /usr/local/hestia/bin/v-update-sys-queue traffic
-41 4 * * * sudo /usr/local/hestia/bin/v-update-sys-hestia-all
 CRON
 
 chmod 600 /var/spool/cron/crontabs/hestiaweb
@@ -1133,6 +1206,11 @@ check_result $? "Failed to start Dovecot"
 systemctl enable nginx 2>/dev/null
 systemctl restart nginx 2>/dev/null
 check_result $? "Failed to start Nginx"
+
+systemctl daemon-reload > /dev/null 2>&1
+systemctl enable hestia-web-terminal > /dev/null 2>&1
+systemctl restart hestia-web-terminal > /dev/null 2>&1
+warn_only $? "Could not (re)start the web terminal service - check manually with 'systemctl status hestia-web-terminal'"
 
 systemctl enable hestia 2>/dev/null
 systemctl restart hestia 2>/dev/null

@@ -12,7 +12,7 @@ Derived from HestiaCP (GPLv3) — see `LICENSE` and `NOTICE.md`.
 
 ## 1. Requirements
 
-- A dedicated Debian 12/13 or Ubuntu 22.04/24.04/26.04 VPS/server, **or** a
+- A dedicated Debian 11/12/13 or Ubuntu 22.04/24.04/26.04 VPS/server, **or** a
   server that already runs another control panel (e.g. 1Panel) that you do
   not want to conflict with.
 - Root SSH access.
@@ -56,7 +56,8 @@ Confirm before proceeding:
 
 | Component | Purpose | Managed by |
 |---|---|---|
-| `hestia-nginx` + `hestia-php` | Panel's own web UI, dedicated port | MiniPanel |
+| `hestia` + `hestia-nginx` + `hestia-php` | Panel base and own web UI, dedicated port | MiniPanel |
+| `hestia-web-terminal` | Browser terminal backend | MiniPanel |
 | System `nginx` | Reverse proxy for phpMyAdmin/phpPgAdmin only | MiniPanel |
 | Exim | SMTP (mail transfer) | MiniPanel |
 | Dovecot | IMAP/POP3 | MiniPanel |
@@ -95,15 +96,18 @@ The installer will:
    (`--purge-mta` / `--no-purge-mta` to control this non-interactively).
 4. Detect an already-running MySQL/MariaDB or PostgreSQL instance and
    offer to reuse it instead of installing a second one.
-5. Install packages: `hestia-nginx`, `hestia-php`, Exim, Dovecot, ClamAV,
-   SpamAssassin, MariaDB, MySQL client libs, PostgreSQL, PHP-FPM, plus a
-   fixed PHP version (currently 8.2) for the panel and DB web UIs.
+5. Install packages: `hestia`, `hestia-nginx`, `hestia-php`,
+   `hestia-web-terminal`, Exim, Dovecot, ClamAV, SpamAssassin, MariaDB,
+   MySQL client libs, PostgreSQL, PHP-FPM, plus a fixed PHP version
+   (currently 8.2) for the panel and DB web UIs.
 6. Create the `hestiaweb` (panel) and `hestiamail` (mail/db service)
    system users and the `hestia-users` group.
 7. Copy `bin/`, `func/`, `web/`, and `install/deb`+`install/common`
    resources into `/usr/local/hestia/`.
-8. Write `/usr/local/hestia/conf/minipanel.conf` and symlink
-   `/etc/hestiacp/hestia.conf` to it.
+8. Write `/usr/local/hestia/conf/hestia.conf`, keep
+   `/usr/local/hestia/conf/minipanel.conf` as a compatibility symlink, and
+   write `/etc/hestiacp/hestia.conf` as the upstream-compatible bootstrap
+   config that exports `HESTIA`.
 9. Configure Exim, Dovecot (2.3 or 2.4 template, auto-detected), ClamAV,
    and SpamAssassin from the Hestia install tree's templates.
 10. Enable/start MariaDB and (unless `--no-pgsql`) PostgreSQL.
@@ -115,9 +119,9 @@ The installer will:
     checked/available port.
 13. Write a scoped sudoers file limiting `hestiaweb` to running only
     `/usr/local/hestia/bin/*` scripts.
-14. Set up a small crontab for queue processing and self-update checks.
-15. Start Exim, Dovecot, nginx, and the panel service; generate a
-    self-signed cert for the panel's own HTTPS.
+14. Set up a small crontab for queue processing.
+15. Start Exim, Dovecot, nginx, web terminal, and the panel service;
+    generate a self-signed cert for the panel's own HTTPS.
 16. Install the File Manager (unless `--no-filemanager`).
 17. Create the `admin` panel user and grant it the admin role (unless an
     admin user already exists), using `--admin-email`/`--admin-password`
@@ -294,7 +298,7 @@ sudo bash install/minipanel-uninstall.sh --yes --keep-packages # only remove Min
 
 What it removes (full run, no flags):
 - Stops and disables `hestia`, `nginx`, `exim4`, `dovecot`, `clamav-daemon`,
-  `spamd`, and the database engines.
+  `spamd`/`spamassassin`, `hestia-web-terminal`, and the database engines.
 - Deletes every mail domain/account via `v-delete-mail-domain` (removes
   Exim/Dovecot config **and mail spool data**) and every database via
   `v-delete-database` (drops the actual MySQL/MariaDB/PostgreSQL
@@ -308,8 +312,8 @@ What it removes (full run, no flags):
 - Deletes `/usr/local/hestia` entirely, the Hestia apt repository, and its
   signing key.
 - Purges the underlying service packages (`exim4`, `dovecot-*`,
-  `clamav-daemon`, `spamd`, `mariadb-server`, `postgresql`, etc.) unless
-  `--keep-packages` is set.
+  `clamav-daemon`, `spamd`/`spamassassin`, `mariadb-server`, `postgresql`,
+  etc.) unless `--keep-packages` is set.
 - Removes the `hestiaweb` and `hestiamail` system users and the
   `hestia-users` group.
 

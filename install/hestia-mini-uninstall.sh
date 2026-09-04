@@ -88,7 +88,7 @@ echo "       Hestia-Mini Uninstaller"
 echo "====================================================="
 echo
 echo -e "${YELLOW}This will remove:${NC}"
-echo "  - The panel (hestia-nginx, hestia-php, /usr/local/hestia)"
+echo "  - The panel (hestia, hestia-nginx, hestia-php, hestia-web-terminal, /usr/local/hestia)"
 echo "  - Exim, Dovecot, ClamAV, SpamAssassin configuration"
 echo "  - phpMyAdmin, phpPgAdmin, and the File Manager"
 echo "  - The reverse-proxy nginx config, sudoers rule, and cron jobs"
@@ -126,7 +126,7 @@ fi
 #----------------------------------------------------------#
 
 echo -e "\n[ * ] Stopping services..."
-for svc in hestia nginx exim4 dovecot clamav-daemon spamd; do
+for svc in hestia hestia-web-terminal nginx exim4 dovecot clamav-daemon spamd spamassassin; do
 	run systemctl stop "$svc"
 	run systemctl disable "$svc"
 done
@@ -273,6 +273,8 @@ run rm -f /etc/hestiacp/hestia.conf
 run rmdir /etc/hestiacp 2> /dev/null
 run rm -f /usr/share/keyrings/hestia-keyring.gpg
 run rm -f /etc/apt/sources.list.d/hestia.list
+run rm -f /usr/share/keyrings/sury-keyring.gpg /etc/apt/sources.list.d/php.list
+run rm -f /usr/share/keyrings/nodejs.gpg /etc/apt/sources.list.d/nodejs.list
 
 #----------------------------------------------------------#
 #                  Purge underlying packages                 #
@@ -282,7 +284,7 @@ if [ "$KEEP_PACKAGES" != 'yes' ]; then
 	echo -e "\n[ * ] Purging underlying service packages..."
 	echo -e "${YELLOW}      (mariadb-server/mysql-server/postgresql are only purged if --keep-data is not set)${NC}"
 
-	pkgs_always="hestia hestia-nginx hestia-php clamav-daemon spamd exim4 exim4-daemon-heavy
+	pkgs_always="hestia hestia-nginx hestia-php hestia-web-terminal nodejs clamav-daemon spamd spamassassin exim4 exim4-daemon-heavy
 	  dovecot-imapd dovecot-managesieved dovecot-pop3d dovecot-sieve"
 
 	pkgs_with_data="mariadb-server mariadb-client mariadb-common mysql-server mysql-client

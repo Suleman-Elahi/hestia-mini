@@ -40,7 +40,7 @@ cron UI, backup UI, and the quick-install app marketplace.
 
 ## Requirements
 
-- A dedicated **Debian 12/13** or **Ubuntu 22.04/24.04/26.04** server, **or** a
+- A dedicated **Debian 11/12/13** or **Ubuntu 22.04/24.04/26.04** server, **or** a
   server that already runs another control panel (e.g. 1Panel) that you don't
   want to conflict with.
 - Root SSH access.
@@ -125,7 +125,7 @@ Uninstall is destructive by default — always run `--dry-run` first.
 | `func/` | Shell function library (core `main.sh`, `db.sh`, `domain.sh`, `ip.sh`, `rebuild.sh`, `syshealth.sh`, `upgrade.sh`) |
 | `web/` | Panel web UI (PHP) — `inc/` core, `add/`, `edit/`, `delete/`, `list/`, `login/`, `api/`, `src/`, themes, locale |
 | `install/` | Installer (`hestia-mini-install.sh`), uninstaller (`hestia-mini-uninstall.sh`), and packaged config templates |
-| `conf/` | Default panel configuration (`minipanel.conf`) |
+| `conf/` | Default panel configuration (`hestia.conf`, with `minipanel.conf` kept as a compatibility symlink) |
 | `data/` | Runtime data (`users/`, `packages/`, `queue/`) |
 | `docs/` | Documentation |
 
