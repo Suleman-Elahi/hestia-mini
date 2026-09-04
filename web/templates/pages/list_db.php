@@ -1,13 +1,14 @@
 <?php
 [$http_host, $port] = explode(":", $_SERVER["HTTP_HOST"] . ":");
-$db_myadmin_link = "//" . $http_host . "/phpmyadmin/";
-$db_pgadmin_link = "//" . $http_host . "/phppgadmin/";
+$db_proxy_port = $_SESSION["PROXY_PORT"] ?? "8080";
+$db_myadmin_link = "http://" . $http_host . ":" . $db_proxy_port . "/phpmyadmin/";
+$db_pgadmin_link = "http://" . $http_host . ":" . $db_proxy_port . "/phppgadmin/";
 
 if (!empty($_SESSION["DB_PMA_ALIAS"])) {
-	$db_myadmin_link = "//" . $http_host . "/" . $_SESSION["DB_PMA_ALIAS"] . "/";
+	$db_myadmin_link = "http://" . $http_host . ":" . $db_proxy_port . "/" . $_SESSION["DB_PMA_ALIAS"] . "/";
 }
 if (!empty($_SESSION["DB_PGA_ALIAS"])) {
-	$db_pgadmin_link = "//" . $http_host . "/" . $_SESSION["DB_PGA_ALIAS"] . "/";
+	$db_pgadmin_link = "http://" . $http_host . ":" . $db_proxy_port . "/" . $_SESSION["DB_PGA_ALIAS"] . "/";
 }
 ?>
 
@@ -136,12 +137,13 @@ if (!empty($_SESSION["DB_PGA_ALIAS"])) {
 					$spnd_confirmation = _('Are you sure you want to suspend database %s?') ;
 				}
 				if ($data[$key]['HOST'] != 'localhost' ) $http_host = $data[$key]['HOST'];
+				$db_proxy_port = $_SESSION['PROXY_PORT'] ?? '8080';
 				if ($data[$key]['TYPE'] == 'mysql') $db_admin = "phpMyAdmin";
-				if ($data[$key]['TYPE'] == 'mysql') $db_admin_link = "https://".$http_host."/phpmyadmin/";
-				if (($data[$key]['TYPE'] == 'mysql') && (!empty($_SESSION['DB_PMA_ALIAS']))) $db_admin_link = $_SESSION['DB_PMA_ALIAS'];
+				if ($data[$key]['TYPE'] == 'mysql') $db_admin_link = "http://".$http_host.":".$db_proxy_port."/phpmyadmin/";
+				if (($data[$key]['TYPE'] == 'mysql') && (!empty($_SESSION['DB_PMA_ALIAS']))) $db_admin_link = "http://".$http_host.":".$db_proxy_port."/".$_SESSION['DB_PMA_ALIAS']."/";
 				if ($data[$key]['TYPE'] == 'pgsql') $db_admin = "phpPgAdmin";
-				if ($data[$key]['TYPE'] == 'pgsql') $db_admin_link = "https://".$http_host."/phppgadmin/";
-				if (($data[$key]['TYPE'] == 'pgsql') && (!empty($_SESSION['DB_PGA_ALIAS']))) $db_admin_link = $_SESSION['DB_PGA_ALIAS'];
+				if ($data[$key]['TYPE'] == 'pgsql') $db_admin_link = "http://".$http_host.":".$db_proxy_port."/phppgadmin/";
+				if (($data[$key]['TYPE'] == 'pgsql') && (!empty($_SESSION['DB_PGA_ALIAS']))) $db_admin_link = "http://".$http_host.":".$db_proxy_port."/".$_SESSION['DB_PGA_ALIAS']."/";
 			?>
 			<div class="units-table-row <?php if ($data[$key]['SUSPENDED'] == 'yes') echo 'disabled'; ?> js-unit"
 				data-sort-date="<?= tohtml(strtotime($data[$key]['DATE'].' '.$data[$key]['TIME'])) ?>"

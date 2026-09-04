@@ -107,23 +107,24 @@ if (!empty($_POST["ok"])) {
 		if ($_POST["v_host"] != "localhost") {
 			$http_host = $_POST["v_host"];
 		}
+		$db_proxy_port = $_SESSION["PROXY_PORT"] ?? "8080";
 		if ($_POST["v_type"] == "mysql") {
 			$db_admin = "phpMyAdmin";
 		}
 		if ($_POST["v_type"] == "mysql") {
-			$db_admin_link = "https://" . $http_host . "/phpmyadmin/";
+			$db_admin_link = "http://" . $http_host . ":" . $db_proxy_port . "/phpmyadmin/";
 		}
 		if ($_POST["v_type"] == "mysql" && !empty($_SESSION["DB_PMA_ALIAS"])) {
-			$db_admin_link = "https://" . $http_host . "/" . $_SESSION["DB_PMA_ALIAS"];
+			$db_admin_link = "http://" . $http_host . ":" . $db_proxy_port . "/" . $_SESSION["DB_PMA_ALIAS"] . "/";
 		}
 		if ($_POST["v_type"] == "pgsql") {
 			$db_admin = "phpPgAdmin";
 		}
 		if ($_POST["v_type"] == "pgsql") {
-			$db_admin_link = "https://" . $http_host . "/phppgadmin/";
+			$db_admin_link = "http://" . $http_host . ":" . $db_proxy_port . "/phppgadmin/";
 		}
 		if ($_POST["v_type"] == "pgsql" && !empty($_SESSION["DB_PGA_ALIAS"])) {
-			$db_admin_link = "https://" . $http_host . "/" . $_SESSION["DB_PGA_ALIAS"];
+			$db_admin_link = "http://" . $http_host . ":" . $db_proxy_port . "/" . $_SESSION["DB_PGA_ALIAS"] . "/";
 		}
 	}
 
