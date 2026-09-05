@@ -28,13 +28,15 @@ source_conf "$HESTIA/conf/hestia.conf"
 #----------------------------------------------------------#
 
 if [ -n "$system" ]; then
-	syshealth_update_${system}_config_format
+	if declare -f "syshealth_update_${system}_config_format" > /dev/null; then
+		"syshealth_update_${system}_config_format"
+	fi
 else
-	syshealth_update_web_config_format
-	syshealth_update_mail_config_format
-	syshealth_update_dns_config_format
-	syshealth_update_db_config_format
-	syshealth_update_user_config_format
+	declare -f syshealth_update_web_config_format > /dev/null && syshealth_update_web_config_format
+	declare -f syshealth_update_mail_config_format > /dev/null && syshealth_update_mail_config_format
+	declare -f syshealth_update_dns_config_format > /dev/null && syshealth_update_dns_config_format
+	declare -f syshealth_update_db_config_format > /dev/null && syshealth_update_db_config_format
+	declare -f syshealth_update_user_config_format > /dev/null && syshealth_update_user_config_format
 fi
 
 #----------------------------------------------------------#

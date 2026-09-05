@@ -279,6 +279,10 @@ run systemctl reload nginx 2> /dev/null
 
 echo -e "\n[ * ] Removing MiniPanel core..."
 run rm -rf "$HESTIA"
+run rm -rf /var/log/hestia
+run rm -f /etc/logrotate.d/hestia
+run rm -f /etc/profile.d/hestia.sh
+run rm -f /run/hestia-nginx.pid /run/hestia-php.pid /run/hestia-php.sock
 run rm -f /etc/hestiacp/hestia.conf
 run rmdir /etc/hestiacp 2> /dev/null
 run rm -f /usr/share/keyrings/hestia-keyring.gpg
@@ -355,12 +359,13 @@ fi
 
 echo -e "\n[ * ] Removing MiniPanel system service accounts..."
 run userdel hestiaweb
+run groupdel hestiaweb 2> /dev/null || true
 if [ "$KEEP_DATA" = 'yes' ]; then
 	run userdel hestiamail
 else
 	run userdel -r hestiamail
 fi
-run groupdel hestia-users
+run groupdel hestia-users 2> /dev/null || true
 
 echo
 echo "====================================================="

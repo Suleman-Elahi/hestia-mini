@@ -705,14 +705,37 @@ if ! id "hestiamail" > /dev/null 2>&1; then
 	useradd "hestiamail" -c "MiniPanel mail/db service account" --no-create-home 2>> $LOG
 	adduser hestiamail hestia-users > /dev/null 2>&1
 fi
+if ! getent group hestiaweb > /dev/null 2>&1; then
+	groupadd -r hestiaweb 2>> $LOG
+fi
 if ! id "hestiaweb" > /dev/null 2>&1; then
-	useradd -r -s /bin/false -d $HESTIA hestiaweb 2>> $LOG
+	useradd -r -g hestiaweb -s /bin/false -d "$HESTIA" hestiaweb 2>> $LOG
 fi
 
-# Create Hestia directories
-mkdir -p $HESTIA/{bin,func,data/{users,packages,queue},ssl,ssl/mail,conf,install,log,web}
-mkdir -p $HESTIA/data/sessions
-chown hestiaweb:hestiaweb $HESTIA/data/sessions
+# Create log path and symbolic link (mirrors upstream Hestia)
+rm -rf /var/log/hestia "$HESTIA/log"
+mkdir -p /var/log/hestia
+ln -sf /var/log/hestia "$HESTIA/log"
+
+# Create Hestia directories and queue pipes
+mkdir -p "$HESTIA"/{bin,func,data/{users,packages,queue,ips},ssl,ssl/mail,conf,conf/defaults,install,web}
+mkdir -p "$HESTIA/data/sessions"
+touch "$HESTIA/data/queue/backup.pipe" "$HESTIA/data/queue/disk.pipe" \
+	"$HESTIA/data/queue/webstats.pipe" "$HESTIA/data/queue/restart.pipe" \
+	"$HESTIA/data/queue/traffic.pipe" "$HESTIA/data/queue/daily.pipe"
+touch /var/log/hestia/system.log /var/log/hestia/nginx-error.log \
+	/var/log/hestia/nginx-access.log /var/log/hestia/auth.log \
+	/var/log/hestia/backup.log
+chmod 750 "$HESTIA/conf" "$HESTIA/data/users" "$HESTIA/data/ips" /var/log/hestia
+chmod -R 750 "$HESTIA/data/queue"
+chmod 660 /var/log/hestia/*
+chown -R root:hestiaweb /var/log/hestia
+chmod 770 "$HESTIA/data/sessions"
+chown hestiaweb:hestiaweb "$HESTIA/data/sessions"
+
+if [ -f "$HESTIA_INSTALL_DIR/logrotate/hestia" ]; then
+	cp -f "$HESTIA_INSTALL_DIR/logrotate/hestia" /etc/logrotate.d/hestia
+fi
 
 # Copy install/ resources (needed at runtime by bin/func scripts and by
 # this installer itself for exim/dovecot/phpmyadmin/phppgadmin/filemanager
@@ -843,6 +866,8 @@ WEB_TERMINAL='true'
 WEB_TERMINAL_PORT='8085'
 EOF
 ln -sf "$HESTIA/conf/hestia.conf" "$HESTIA/conf/minipanel.conf"
+mkdir -p "$HESTIA/conf/defaults"
+cp -f "$HESTIA/conf/hestia.conf" "$HESTIA/conf/defaults/hestia.conf"
 
 #----------------------------------------------------------#
 #                Configure Mail Services                    #
@@ -1202,15 +1227,19 @@ echo -e "\n[ * ] Setting default configuration values..."
 BIN="$HESTIA/bin"
 export HESTIA BIN
 if [ -f "$HESTIA/func/syshealth.sh" ]; then
-	source $HESTIA/func/syshealth.sh
-	syshealth_repair_system_config 2>/dev/null
+	source "$HESTIA/func/syshealth.sh"
+	syshealth_repair_system_config 2>> "$LOG"
+	syshealth_adapt_hestia_nginx_listen_ports 2>> "$LOG"
+	syshealth_adapt_nginx_resolver 2>> "$LOG"
 fi
 
 # Set backend port
-$HESTIA/bin/v-change-sys-port $port > /dev/null 2>&1
+$HESTIA/bin/v-change-sys-port "$port" >> "$LOG" 2>&1
+warn_only $? "v-change-sys-port encountered a warning"
 
 # Update defaults
-$HESTIA/bin/v-update-sys-defaults > /dev/null 2>&1
+$HESTIA/bin/v-update-sys-defaults >> "$LOG" 2>&1
+warn_only $? "v-update-sys-defaults encountered a warning"
 
 #----------------------------------------------------------#
 #                Install File Manager                       #
@@ -1254,10 +1283,59 @@ systemctl enable hestia-web-terminal > /dev/null 2>&1
 systemctl restart hestia-web-terminal > /dev/null 2>&1
 warn_only $? "Could not (re)start the web terminal service - check manually with 'systemctl status hestia-web-terminal'"
 
+# Ensure log directory and files exist with correct permissions before service startup
+mkdir -p /var/log/hestia "$HESTIA/data/sessions"
+touch /var/log/hestia/nginx-error.log /var/log/hestia/nginx-access.log /var/log/hestia/system.log
+chown -R root:hestiaweb /var/log/hestia
+chmod 750 /var/log/hestia
+chmod 660 /var/log/hestia/*
+chown hestiaweb:hestiaweb "$HESTIA/data/sessions"
+chmod 770 "$HESTIA/data/sessions"
+
+# Re-run listen ports and resolver adaptation after port configuration
+if [ -f "$HESTIA/func/syshealth.sh" ]; then
+	source "$HESTIA/func/syshealth.sh"
+	syshealth_adapt_hestia_nginx_listen_ports 2>> "$LOG"
+	syshealth_adapt_nginx_resolver 2>> "$LOG"
+fi
+
+# Ensure /etc/init.d/hestia is executable
+if [ -f /etc/init.d/hestia ]; then
+	chmod 755 /etc/init.d/hestia
+fi
+
+# Clean up any stale sockets/pidfiles
+rm -f /run/hestia-nginx.pid /run/hestia-php.pid /run/hestia-php.sock
+
+# Validate panel internal Nginx and PHP-FPM configuration before starting
+if [ -x "$HESTIA/nginx/sbin/hestia-nginx" ] && [ -f "$HESTIA/nginx/conf/nginx.conf" ]; then
+	"$HESTIA/nginx/sbin/hestia-nginx" -t -c "$HESTIA/nginx/conf/nginx.conf" >> "$LOG" 2>&1
+	check_result $? "Hestia panel Nginx configuration test failed - check $LOG"
+fi
+if [ -x "$HESTIA/php/sbin/hestia-php" ] && [ -f "$HESTIA/php/etc/php-fpm.conf" ]; then
+	"$HESTIA/php/sbin/hestia-php" -t -y "$HESTIA/php/etc/php-fpm.conf" >> "$LOG" 2>&1
+	check_result $? "Hestia panel PHP-FPM configuration test failed - check $LOG"
+fi
+
+systemctl daemon-reload > /dev/null 2>&1
 update-rc.d hestia defaults >> "$LOG" 2>&1
 check_result $? "Failed to register the Hestia panel service"
-systemctl restart hestia >> "$LOG" 2>&1
-check_result $? "Failed to start the Hestia panel service - check $LOG"
+systemctl daemon-reload > /dev/null 2>&1
+systemctl reset-failed hestia > /dev/null 2>&1 || true
+
+if ! systemctl restart hestia >> "$LOG" 2>&1 && ! systemctl start hestia >> "$LOG" 2>&1; then
+	echo "--- systemctl status hestia ---" >> "$LOG" 2>&1
+	systemctl status hestia >> "$LOG" 2>&1 || true
+	echo "--- journalctl -n 30 -u hestia ---" >> "$LOG" 2>&1
+	journalctl -n 30 -u hestia >> "$LOG" 2>&1 || true
+	if [ -f /var/log/hestia/nginx-error.log ]; then
+		echo "--- /var/log/hestia/nginx-error.log ---" >> "$LOG" 2>&1
+		tail -n 30 /var/log/hestia/nginx-error.log >> "$LOG" 2>&1 || true
+	fi
+	check_result 1 "Failed to start the Hestia panel service - check $LOG"
+else
+	echo -e "[${GREEN} OK ${NC}]"
+fi
 
 echo -e "\n====================================================="
 echo -e "  Hestia-Mini has been installed successfully!"

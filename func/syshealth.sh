@@ -518,5 +518,92 @@ function syshealth_repair_system_config() {
 	source_conf "$HESTIA/conf/hestia.conf"
 }
 
+# Stubs for removed systems in Hestia-Mini
+function syshealth_update_web_config_format() {
+	return 0
+}
+
+function syshealth_update_dns_config_format() {
+	return 0
+}
+
 # Repair System Cron Jobs
 # Add default cron jobs to "hestiaweb" user account's cron tab
+function syshealth_repair_system_cronjobs() {
+	local min hour
+	min=$(gen_pass '012345' '2')
+	hour=$(gen_pass '1234567' '1')
+	echo "MAILTO=\"\"" > /var/spool/cron/crontabs/hestiaweb
+	echo "CONTENT_TYPE=\"text/plain; charset=utf-8\"" >> /var/spool/cron/crontabs/hestiaweb
+	echo "*/2 * * * * sudo /usr/local/hestia/bin/v-update-sys-queue restart" >> /var/spool/cron/crontabs/hestiaweb
+	echo "10 00 * * * sudo /usr/local/hestia/bin/v-update-sys-queue daily" >> /var/spool/cron/crontabs/hestiaweb
+	echo "15 02 * * * sudo /usr/local/hestia/bin/v-update-sys-queue disk" >> /var/spool/cron/crontabs/hestiaweb
+	echo "10 00 * * * sudo /usr/local/hestia/bin/v-update-sys-queue traffic" >> /var/spool/cron/crontabs/hestiaweb
+	chmod 600 /var/spool/cron/crontabs/hestiaweb
+	chown hestiaweb:hestiaweb /var/spool/cron/crontabs/hestiaweb
+}
+
+# Adapt Port Listing in HESTIA NGINX Backend
+# Activates or deactivates port listing on IPV4 or/and IPV6 network interfaces
+function syshealth_adapt_hestia_nginx_listen_ports() {
+	NGINX_CONF="/usr/local/hestia/nginx/conf/nginx.conf"
+	[ -f "$NGINX_CONF" ] || return 0
+
+	# Detect "physical" NICs only (virtual NICs created by Docker, WireGuard etc. are excluded)
+	physical_nics="$(ip -d -j link show 2>/dev/null | jq -r '.[] | if .link_type == "loopback" // .linkinfo.info_kind then empty else .ifname end' 2>/dev/null)"
+	if [ -z "$physical_nics" ]; then
+		physical_nics="$(ip -d -j link show 2>/dev/null | jq -r '.[] | if .link_type == "loopback" then empty else .ifname end' 2>/dev/null)"
+	fi
+	local ipv4_scope_global=""
+	local ipv6_scope_global=""
+	for nic in $physical_nics; do
+		if [ -z "$ipv4_scope_global" ]; then
+			ipv4_scope_global="$(ip -4 -d -j addr show "$nic" 2>/dev/null | jq -r '.[] | select(length > 0) | .addr_info[] | if .scope == "global" then .local else empty end' 2>/dev/null)"
+		fi
+		if [ -z "$ipv6_scope_global" ]; then
+			ipv6_scope_global="$(ip -6 -d -j addr show "$nic" 2>/dev/null | jq -r '.[] | select(length > 0) | .addr_info[] | if .scope == "global" then .local else empty end' 2>/dev/null)"
+		fi
+	done
+
+	# Fallback if jq/json was unavailable or if physical_nics detection missed:
+	# Check /proc/net/if_inet6 directly for any non-local IPv6 addresses
+	if [ -z "$ipv6_scope_global" ] && [ -f /proc/net/if_inet6 ]; then
+		# Scope 0x00 is global, 0x20 is link-local, 0x10 is host
+		if awk '$4 != "20" && $4 != "10" { found=1 } END { exit !found }' /proc/net/if_inet6 2>/dev/null; then
+			ipv6_scope_global="yes"
+		fi
+	fi
+
+	# Adapt port listing in nginx.conf depended on availability of IPV4 and IPV6 network interface
+	if [ -z "$ipv4_scope_global" ]; then
+		sed -i 's/^\([ \t]*listen[ \t]*[0-9]\{1,5\}.*\)/#\1/' "$NGINX_CONF"
+	else
+		sed -i 's/#\([ \t]*listen[ \t]*[0-9]\{1,5\}.*\)/\1/' "$NGINX_CONF"
+	fi
+	if [ -z "$ipv6_scope_global" ]; then
+		sed -i 's/^\([ \t]*listen[ \t]*\[\:\:\]\:[0-9]\{1,5\}.*\)/#\1/' "$NGINX_CONF"
+	else
+		sed -i 's/#\([ \t]*listen[ \t]*\[\:\:\]\:[0-9]\{1,5\}.*\)/\1/' "$NGINX_CONF"
+	fi
+}
+
+syshealth_adapt_nginx_resolver() {
+	NGINX_CONF="/usr/local/hestia/nginx/conf/nginx.conf"
+	[ -f "$NGINX_CONF" ] || return 0
+	if grep -qw "1.0.0.1 8.8.4.4 1.1.1.1 8.8.8.8" "$NGINX_CONF"; then
+		local resolver=""
+		for nameserver in $(grep -is '^nameserver' /etc/resolv.conf | cut -d' ' -f2 | tr '\r\n' ' ' | xargs); do
+			if echo "$nameserver" | grep -Pq "^(\d{1,3}\.){3}\d{1,3}$"; then
+				if [ -z "$resolver" ]; then
+					resolver="$nameserver"
+				else
+					resolver="$resolver $nameserver"
+				fi
+			fi
+		done
+
+		if [ -n "$resolver" ]; then
+			sed -i "s/1.0.0.1 8.8.4.4 1.1.1.1 8.8.8.8/$resolver/g" "$NGINX_CONF"
+		fi
+	fi
+}

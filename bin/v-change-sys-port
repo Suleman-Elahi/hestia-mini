@@ -88,7 +88,7 @@ else
 	fi
 
 	# Check if Hestia is running
-	if [[ $(ps -eaf | grep -i hestia | sed '/^$/d' | wc -l) -gt 1 ]]; then
+	if systemctl is-active --quiet hestia 2>/dev/null || pgrep -f "hestia-nginx: master process" > /dev/null 2>&1; then
 		"$BIN/v-restart-service" hestia
 	fi
 fi
