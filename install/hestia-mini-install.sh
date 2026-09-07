@@ -1143,6 +1143,10 @@ fi
 $HESTIA/bin/v-change-sys-port "$port" >> "$LOG" 2>&1
 warn_only $? "v-change-sys-port encountered a warning"
 
+# Register system IP address
+$HESTIA/bin/v-update-sys-ip >> "$LOG" 2>&1
+warn_only $? "v-update-sys-ip encountered a warning"
+
 # Update defaults
 $HESTIA/bin/v-update-sys-defaults >> "$LOG" 2>&1
 warn_only $? "v-update-sys-defaults encountered a warning"
