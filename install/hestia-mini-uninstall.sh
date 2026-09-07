@@ -16,8 +16,12 @@
 # ======================================================== #
 
 export PATH=$PATH:/sbin
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+export APT_LISTCHANGES_FRONTEND=none
 HESTIA='/usr/local/hestia'
 LOG="/root/hestia_mini_uninstall-$(date +%d%m%Y%H%M).log"
+spinner="/\-|"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -86,6 +90,40 @@ check_result() {
 	fi
 }
 
+run_apt() {
+	local action_desc="$1"
+	shift
+	if [ "$DRY_RUN" = 'yes' ]; then
+		echo "  [dry-run] $*"
+		return 0
+	fi
+
+	printf "  %-55s" "$action_desc..."
+	"$@" >> "$LOG" 2>&1 &
+	local back_pid=$!
+	local spin_i=1
+	while kill -0 $back_pid > /dev/null 2>&1; do
+		printf " [%c]  " "${spinner:spin_i++%${#spinner}:1}"
+		sleep 0.5
+		printf "\b\b\b\b\b\b"
+	done
+	echo -ne '\b\b\b\b\b\b'
+	wait $back_pid
+	local status=$?
+	if [ "$status" -eq 0 ]; then
+		echo -e "[${GREEN} OK ${NC}]"
+	else
+		echo -e "[${RED} FAILED ${NC}]"
+		echo "  Error: $action_desc failed. Check details in: $LOG"
+		exit "$status"
+	fi
+}
+
+cleanup_policy_rc_d() {
+	rm -f /usr/sbin/policy-rc.d
+}
+trap cleanup_policy_rc_d EXIT INT TERM
+
 say() {
 	echo -e "$1"
 }
@@ -134,25 +172,7 @@ if [ "$ASSUME_YES" != 'yes' ] && [ "$DRY_RUN" != 'yes' ]; then
 fi
 
 #----------------------------------------------------------#
-#                 Stop and disable services                 #
-#----------------------------------------------------------#
-
-echo -e "\n[ * ] Stopping services..."
-for svc in hestia hestia-web-terminal nginx exim4 dovecot clamav-daemon spamd spamassassin; do
-	run systemctl stop "$svc"
-	run systemctl disable "$svc"
-done
-
-# Only stop DB engines if we're about to remove their packages/data;
-# otherwise leave them running for whatever else might depend on them.
-if [ "$KEEP_DATA" != 'yes' ] && [ "$KEEP_PACKAGES" != 'yes' ]; then
-	run systemctl stop mysql
-	run systemctl stop mariadb
-	run systemctl stop postgresql
-fi
-
-#----------------------------------------------------------#
-#              Remove MiniPanel-managed databases            #
+#              Remove MiniPanel-managed databases          #
 #----------------------------------------------------------#
 
 if [ "$KEEP_DATA" != 'yes' ]; then
@@ -163,8 +183,8 @@ if [ "$KEEP_DATA" != 'yes' ]; then
 		if [ "$DRY_RUN" = 'yes' ]; then
 			echo "  [dry-run] DROP DATABASE phpmyadmin; DROP USER 'pma'@'localhost';"
 		else
-			$mysql_cmd -uroot -e "DROP DATABASE IF EXISTS phpmyadmin;" >> "$LOG" 2>&1
-			$mysql_cmd -uroot -e "DROP USER IF EXISTS 'pma'@'localhost';" >> "$LOG" 2>&1
+			$mysql_cmd -uroot -e "DROP DATABASE IF EXISTS phpmyadmin;" >> "$LOG" 2>&1 || true
+			$mysql_cmd -uroot -e "DROP USER IF EXISTS 'pma'@'localhost';" >> "$LOG" 2>&1 || true
 		fi
 	fi
 
@@ -182,13 +202,32 @@ if [ "$KEEP_DATA" != 'yes' ]; then
 					if [ "$DRY_RUN" = 'yes' ]; then
 						echo "  [dry-run] $HESTIA/bin/v-delete-database $mp_user $dbname"
 					else
-						"$HESTIA/bin/v-delete-database" "$mp_user" "$dbname" >> "$LOG" 2>&1
+						"$HESTIA/bin/v-delete-database" "$mp_user" "$dbname" >> "$LOG" 2>&1 || true
 					fi
 				done < "$user_dir/db.conf"
 			fi
 		done
 	fi
 fi
+
+#----------------------------------------------------------#
+#                 Stop and disable services                 #
+#----------------------------------------------------------#
+
+echo -e "\n[ * ] Stopping services..."
+for svc in hestia hestia-web-terminal nginx exim4 dovecot clamav-daemon clamav-freshclam spamd spamassassin; do
+	run systemctl stop "$svc" 2>/dev/null || true
+	run systemctl disable "$svc" 2>/dev/null || true
+done
+
+# Only stop DB engines if we're about to remove their packages/data;
+# otherwise leave them running for whatever else might depend on them.
+if [ "$KEEP_DATA" != 'yes' ] && [ "$KEEP_PACKAGES" != 'yes' ]; then
+	run systemctl stop mysql 2>/dev/null || true
+	run systemctl stop mariadb 2>/dev/null || true
+	run systemctl stop postgresql 2>/dev/null || true
+fi
+killall -9 freshclam clamd 2>/dev/null || true
 
 #----------------------------------------------------------#
 #                 Remove mail data (Exim/Dovecot)            #
@@ -274,63 +313,49 @@ run systemctl reload nginx 2> /dev/null
 # retained or partially configured Exim package unusable.
 
 #----------------------------------------------------------#
-#                    Remove panel software                   #
-#----------------------------------------------------------#
-
-echo -e "\n[ * ] Removing MiniPanel core..."
-run rm -rf "$HESTIA"
-run rm -rf /var/log/hestia
-run rm -f /etc/logrotate.d/hestia
-run rm -f /etc/profile.d/hestia.sh
-run rm -f /run/hestia-nginx.pid /run/hestia-php.pid /run/hestia-php.sock
-run rm -f /etc/hestiacp/hestia.conf
-run rmdir /etc/hestiacp 2> /dev/null
-run rm -f /usr/share/keyrings/hestia-keyring.gpg
-run rm -f /etc/apt/sources.list.d/hestia.list
-run rm -f /usr/share/keyrings/sury-keyring.gpg /etc/apt/sources.list.d/php.list
-run rm -f /usr/share/keyrings/nodejs.gpg /etc/apt/sources.list.d/nodejs.list
-
-#----------------------------------------------------------#
-#                  Purge underlying packages                 #
+#                  Purge underlying packages               #
 #----------------------------------------------------------#
 
 if [ "$KEEP_PACKAGES" != 'yes' ]; then
 	echo -e "\n[ * ] Purging underlying service packages..."
 	echo -e "${YELLOW}      (mariadb-server/mysql-server/postgresql are only purged if --keep-data is not set)${NC}"
 
-	pkgs_always="hestia hestia-nginx hestia-php hestia-web-terminal nodejs clamav-daemon spamd spamassassin exim4 exim4-base exim4-config exim4-daemon-heavy bsd-mailx
-	  dovecot-imapd dovecot-managesieved dovecot-pop3d dovecot-sieve"
+	pkgs_always="hestia hestia-nginx hestia-php hestia-web-terminal nodejs clamav-daemon clamav-freshclam spamd spamassassin exim4 exim4-base exim4-config exim4-daemon-heavy bsd-mailx dovecot-imapd dovecot-managesieved dovecot-pop3d dovecot-sieve"
 
-	pkgs_with_data="mariadb-server mariadb-client mariadb-common mysql-server mysql-client
-	  mysql-common postgresql postgresql-contrib"
+	pkgs_with_data="mariadb-server mariadb-client mariadb-common mysql-server mysql-client mysql-common postgresql postgresql-contrib"
 
-	if [ "$DRY_RUN" = 'yes' ]; then
-		echo "  [dry-run] apt-get -y purge $pkgs_always"
-	else
-		apt-get -y purge $pkgs_always >> "$LOG" 2>&1
-		check_result $? "Failed to purge service packages. Check details in: $LOG"
+	# Preseed debconf selections for unattended package purge
+	if command -v debconf-set-selections > /dev/null 2>&1; then
+		echo "mariadb-server mariadb-server/postrm_remove_databases boolean true" | debconf-set-selections 2>/dev/null || true
+		echo "mysql-server mysql-server/postrm_remove_databases boolean true" | debconf-set-selections 2>/dev/null || true
+		echo "exim4-base exim4/purge_spool boolean true" | debconf-set-selections 2>/dev/null || true
+		echo "clamav-base clamav-base/purge boolean true" | debconf-set-selections 2>/dev/null || true
 	fi
 
+	# Prevent maintainer scripts from hanging on service management during purge
+	echo -e '#!/bin/sh\nexit 101' > /usr/sbin/policy-rc.d
+	chmod a+x /usr/sbin/policy-rc.d
+
+	apt_opts=(
+		-y
+		--allow-change-held-packages
+		-o Dpkg::Options::="--force-confdef"
+		-o Dpkg::Options::="--force-confold"
+	)
+
+	run_apt "Purging panel, web, and mail packages" apt-get "${apt_opts[@]}" purge $pkgs_always
+
 	if [ "$KEEP_DATA" != 'yes' ]; then
-		if [ "$DRY_RUN" = 'yes' ]; then
-			echo "  [dry-run] apt-get -y purge $pkgs_with_data"
-			echo "  [dry-run] rm -rf /var/lib/mysql /var/lib/postgresql"
-		else
-			apt-get -y purge $pkgs_with_data >> "$LOG" 2>&1
-			check_result $? "Failed to purge database packages. Check details in: $LOG"
-			rm -rf /var/lib/mysql /var/lib/postgresql
-		fi
+		run_apt "Purging database packages" apt-get "${apt_opts[@]}" purge $pkgs_with_data
+		run rm -rf /var/lib/mysql /var/lib/postgresql
 	else
 		echo "  --keep-data set: leaving mariadb-server/mysql-server/postgresql packages"
 		echo "  and their data directories (/var/lib/mysql, /var/lib/postgresql) installed."
 	fi
 
-	if [ "$DRY_RUN" = 'yes' ]; then
-		echo "  [dry-run] apt-get -y autoremove"
-	else
-		apt-get -y autoremove >> "$LOG" 2>&1
-		check_result $? "Failed to autoremove unused packages. Check details in: $LOG"
-	fi
+	run_apt "Removing unused dependencies (autoremove)" apt-get "${apt_opts[@]}" autoremove
+
+	rm -f /usr/sbin/policy-rc.d
 
 	echo -e "\n[ * ] Removing Exim/Dovecot configuration written by MiniPanel..."
 	run rm -f /etc/exim4/exim4.conf.template /etc/exim4/dnsbl.conf \
@@ -352,6 +377,23 @@ else
 	fi
 	echo "  Dovecot configuration is retained because its packages remain installed."
 fi
+
+#----------------------------------------------------------#
+#                    Remove panel software                 #
+#----------------------------------------------------------#
+
+echo -e "\n[ * ] Removing remaining MiniPanel core files..."
+run rm -rf "$HESTIA"
+run rm -rf /var/log/hestia
+run rm -f /etc/logrotate.d/hestia
+run rm -f /etc/profile.d/hestia.sh
+run rm -f /run/hestia-nginx.pid /run/hestia-php.pid /run/hestia-php.sock
+run rm -f /etc/hestiacp/hestia.conf
+run rmdir /etc/hestiacp 2> /dev/null
+run rm -f /usr/share/keyrings/hestia-keyring.gpg
+run rm -f /etc/apt/sources.list.d/hestia.list
+run rm -f /usr/share/keyrings/sury-keyring.gpg /etc/apt/sources.list.d/php.list
+run rm -f /usr/share/keyrings/nodejs.gpg /etc/apt/sources.list.d/nodejs.list
 
 #----------------------------------------------------------#
 #                  Remove system service users                #
