@@ -148,6 +148,11 @@ function hst_add_history_log($message, $category = "System", $level = "Info", $u
 }
 
 function get_hostname() {
+	static $cached = null;
+	if ($cached !== null) {
+		return $cached;
+	}
+
 	$badValues = [
 		false,
 		null,
@@ -164,12 +169,15 @@ function get_hostname() {
 	}
 	$ret2 = gethostbyname($ret);
 	if (in_array($ret2, $badValues, true)) {
+		$cached = $ret;
 		return $ret;
 	}
 	$ret3 = gethostbyaddr($ret2);
 	if (in_array($ret3, $badValues, true)) {
+		$cached = $ret2;
 		return $ret2;
 	}
+	$cached = $ret3;
 	return $ret3;
 }
 

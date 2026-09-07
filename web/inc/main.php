@@ -1,4 +1,9 @@
 <?php
+// Enable gzip output compression for faster page loads
+if (function_exists('ob_gzhandler') && !ini_get('zlib.output_compression')) {
+	ob_start('ob_gzhandler');
+}
+
 session_start();
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -19,10 +24,12 @@ try {
 
 define("HESTIA_DIR_BIN", "/usr/local/hestia/bin/");
 define("HESTIA_CMD", "/usr/bin/sudo /usr/local/hestia/bin/");
-define("DEFAULT_PHP_VERSION", "php-" . exec('php -r "echo substr(phpversion(),0,3);"'));
+define("DEFAULT_PHP_VERSION", "php-" . substr(phpversion(), 0, 3));
 
-// Load Hestia Config directly
-load_hestia_config();
+// Load Hestia Config only if not already loaded in session
+if (!isset($_SESSION["VERSION"])) {
+	load_hestia_config();
+}
 require_once dirname(__FILE__) . "/prevent_csrf.php";
 require_once dirname(__FILE__) . "/helpers.php";
 $root_directory = dirname(__FILE__) . "/../../";
@@ -87,7 +94,9 @@ if (isset($_SESSION["user"])) {
 	unset($output, $return_var);
 	$_SESSION["login_shell"] = $data[$username]["SHELL"];
 	$_SESSION["role"] = $data[$username]["ROLE"];
-	unset($data, $username);
+	// Cache for top_panel() to avoid duplicate exec call
+	$_cached_user_data = $data;
+	unset($username);
 }
 
 if ($_SESSION["RELEASE_BRANCH"] == "release" && $_SESSION["DEBUG_MODE"] == "false") {
@@ -243,16 +252,24 @@ function show_alert_message($data) {
 }
 
 function top_panel($user, $TAB) {
-	$command = HESTIA_CMD . "v-list-user " . $user . " 'json'";
-	exec($command, $output, $return_var);
-	if ($return_var > 0) {
-		destroy_sessions();
-		$_SESSION["error_msg"] = _("You are logged out, please log in again.");
-		header("Location: /login/");
-		exit();
+	global $_cached_user_data;
+
+	// Reuse cached user data from main.php to avoid duplicate exec call
+	if (isset($_cached_user_data)) {
+		$panel = $_cached_user_data;
+		$_cached_user_data = null;
+	} else {
+		$command = HESTIA_CMD . "v-list-user " . $user . " 'json'";
+		exec($command, $output, $return_var);
+		if ($return_var > 0) {
+			destroy_sessions();
+			$_SESSION["error_msg"] = _("You are logged out, please log in again.");
+			header("Location: /login/");
+			exit();
+		}
+		$panel = json_decode(implode("", $output), true);
+		unset($output);
 	}
-	$panel = json_decode(implode("", $output), true);
-	unset($output);
 
 	// Log out active sessions for suspended users
 	if ($panel[$user]["SUSPENDED"] === "yes" && $_SESSION["POLICY_USER_VIEW_SUSPENDED"] !== "yes") {

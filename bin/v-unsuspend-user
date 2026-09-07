@@ -86,19 +86,19 @@ fi
 
 # Restarting system services
 if [ -n "$WEB_SYSTEM" ]; then
-$BIN/v-restart-web "$restart"
+	$BIN/v-restart-web "$restart"
+	check_result $? "Web restart failed" > /dev/null
 fi
-check_result $? "Web restart failed" > /dev/null
 
-if [ -n "$WEB_SYSTEM" ]; then
-$BIN/v-restart-proxy "$restart"
+if [ -n "$PROXY_SYSTEM" ]; then
+	$BIN/v-restart-proxy "$restart"
+	check_result $? "Proxy restart failed" > /dev/null
 fi
-check_result $? "Proxy restart failed" > /dev/null
 
 if [ -n "$DNS_SYSTEM" ]; then
-$BIN/v-restart-dns "$restart"
+	$BIN/v-restart-dns "$restart"
+	check_result $? "DNS restart failed" > /dev/null
 fi
-check_result $? "DNS restart failed" > /dev/null
 
 $BIN/v-restart-cron "$restart"
 check_result $? "Cron restart failed" > /dev/null

@@ -477,23 +477,24 @@ if port_in_use 8083; then
 		echo -e "${RED}Error: Could not find an available port for the panel.${NC}"
 		exit 1
 	fi
-	echo "  Using port $port for Hestia-Mini."
+	echo "  Using port $port for Hestia-Mini panel."
 else
 	port=8083
+	echo "  Hestia-Mini panel will use port $port."
 fi
 
 # Port conflict check - reverse proxy port (phpMyAdmin/phpPgAdmin)
 if port_in_use "$PROXY_PORT"; then
-	echo -e "${YELLOW}Warning: Port $PROXY_PORT (reverse proxy) is already in use.${NC}"
+	echo -e "${YELLOW}Warning: Port $PROXY_PORT (DB web UI reverse proxy) is already in use.${NC}"
 	alt_port=$(find_free_port 8091 8092 8093 8094 8095)
 	if [ -z "$alt_port" ]; then
-		echo -e "${RED}Error: Could not find an available port for the reverse proxy.${NC}"
+		echo -e "${RED}Error: Could not find an available port for the DB web UI reverse proxy.${NC}"
 		exit 1
 	fi
-	echo "  Using port $alt_port for the reverse proxy instead."
+	echo "  Using port $alt_port for database web UIs instead."
 	PROXY_PORT="$alt_port"
 else
-	echo "  Reverse proxy will use port $PROXY_PORT."
+	echo "  Database web UIs (reverse proxy) will use port $PROXY_PORT."
 fi
 
 # Port conflict check - phpMyAdmin/phpPgAdmin backend ports

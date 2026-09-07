@@ -98,14 +98,14 @@ update_object_value 'mail' 'DOMAIN' "$domain" '$WEBMAIL' ""
 if [ -n "$restart" ]; then
 	# Restarting web server
 	if [ -n "$WEB_SYSTEM" ]; then
-	$BIN/v-restart-web "$restart"
+		$BIN/v-restart-web "$restart"
+		check_result $? "Web restart failed" > /dev/null
 	fi
-	check_result $? "Web restart failed" > /dev/null
 
-	if [ -n "$WEB_SYSTEM" ]; then
-	$BIN/v-restart-proxy "$restart"
+	if [ -n "$PROXY_SYSTEM" ]; then
+		$BIN/v-restart-proxy "$restart"
+		check_result $? "Proxy restart failed" > /dev/null
 	fi
-	check_result $? "Proxy restart failed" > /dev/null
 fi
 
 # Logging

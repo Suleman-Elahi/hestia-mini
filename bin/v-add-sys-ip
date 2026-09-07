@@ -232,15 +232,13 @@ fi
 
 # Restarting web server
 if [ -n "$WEB_SYSTEM" ]; then
-$BIN/v-restart-web
+	$BIN/v-restart-web
+	check_result $? "Web restart failed" > /dev/null
 fi
-check_result $? "Web restart failed" > /dev/null
 
 # Restarting proxy server
 if [ -n "$PROXY_SYSTEM" ]; then
-	if [ -n "$WEB_SYSTEM" ]; then
 	$BIN/v-restart-proxy
-	fi
 	check_result $? "Proxy restart failed" > /dev/null
 fi
 
