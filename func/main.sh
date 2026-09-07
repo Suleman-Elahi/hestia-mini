@@ -395,18 +395,8 @@ is_object_valid() {
 		if [[ -z "$key" || ${#key} -lt 16 ]] || [[ ! -f "$HESTIA/data/access-keys/${key}" && ! -f "$HESTIA/data/access-keys/$key" ]]; then
 			check_result "$E_NOTEXIST" "$1 $3 doesn't exist"
 		fi
-	elif [ $2 = 'DOMAIN' ]; then
-		# Support domain lookups in domain.conf
-		if [ -f "$HESTIA/data/users/$user/domain.conf" ]; then
-			object=$(grep "DOMAIN='$3'" $HESTIA/data/users/$user/domain.conf)
-			if [ -z "$object" ]; then
-				check_result "$E_NOTEXIST" "domain $3 doesn't exist"
-			fi
-		else
-			check_result "$E_NOTEXIST" "domain $3 doesn't exist"
-		fi
 	else
-		object=$(grep "$2='$3'" $HESTIA/data/users/$user/$1.conf)
+		object=$(grep "$2='$3'" $HESTIA/data/users/$user/$1.conf 2>/dev/null)
 		if [ -z "$object" ]; then
 			arg1=$(basename $1)
 			arg2=$(echo $2 | tr '[:upper:]' '[:lower:]')

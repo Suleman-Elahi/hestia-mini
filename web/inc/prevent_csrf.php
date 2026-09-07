@@ -110,8 +110,15 @@ function prevent_get_csrf() {
 				in_array($_SERVER["DOCUMENT_URI"], [
 					"/list/user/index.php",
 					"/login/index.php",
+					"/list/domain/index.php",
 					"/list/mail/index.php",
-					"/list/db/index.php",
+					"/list/terminal/index.php",
+					"/list/log/index.php",
+					"/list/log/auth/index.php",
+					"/list/package/index.php",
+					"/list/key/index.php",
+					"/list/access-key/index.php",
+					"/list/notifications/index.php",
 					"/reset/index.php",
 				])
 			) {

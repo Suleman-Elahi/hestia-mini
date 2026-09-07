@@ -72,8 +72,8 @@ if (!empty($_POST["ok"])) {
 
 	// Set domain name to lowercase and remove www prefix
 	$v_domain = preg_replace("/^www./i", "", $_POST["v_domain"]);
-	$v_domain = quoteshellarg($v_domain);
-	$v_domain = strtolower($v_domain);
+	$v_domain = strtolower(trim($v_domain));
+	$v_domain_arg = quoteshellarg($v_domain);
 
 	// Add mail domain
 	if (empty($_SESSION["error_msg"])) {
@@ -82,7 +82,7 @@ if (!empty($_POST["ok"])) {
 				"v-add-mail-domain " .
 				$user .
 				" " .
-				$v_domain .
+				$v_domain_arg .
 				" " .
 				$v_antispam .
 				" " .
@@ -98,7 +98,7 @@ if (!empty($_POST["ok"])) {
 
 	if (!empty($_POST["v_reject"]) && $v_antispam == "yes" && empty($_SESSION["error_msg"])) {
 		exec(
-			HESTIA_CMD . "v-add-mail-domain-reject " . $user . " " . $v_domain . " yes",
+			HESTIA_CMD . "v-add-mail-domain-reject " . $user . " " . $v_domain_arg . " yes",
 			$output,
 			$return_var,
 		);
@@ -115,7 +115,7 @@ if (!empty($_POST["ok"])) {
 						"v-add-mail-domain-webmail " .
 						$user .
 						" " .
-						$v_domain .
+						$v_domain_arg .
 						" " .
 						$v_webmail .
 						" yes",
@@ -132,7 +132,7 @@ if (!empty($_POST["ok"])) {
 		if (empty($_POST["v_webmail"])) {
 			if (empty($_SESSION["error_msg"])) {
 				exec(
-					HESTIA_CMD . "v-delete-mail-domain-webmail " . $user . " " . $v_domain . " yes",
+					HESTIA_CMD . "v-delete-mail-domain-webmail " . $user . " " . $v_domain_arg . " yes",
 					$output,
 					$return_var,
 				);
@@ -168,7 +168,7 @@ if (!empty($_POST["ok"])) {
 						"v-add-mail-domain-smtp-relay " .
 						$user .
 						" " .
-						$v_domain .
+						$v_domain_arg .
 						" " .
 						$v_smtp_relay_host .
 						" " .
