@@ -2,7 +2,7 @@
 	<div class="container">
 		<p>
 			<a href="https://hestiacp.com/" class="app-footer-link" target="_blank">
-				Hestia Control Panel
+				Hestia-Mini
 			</a>
 			v<?= $_SESSION["VERSION"] ?>
 		</p>

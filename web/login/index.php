@@ -81,21 +81,15 @@ if (isset($_SESSION["user"])) {
 		$data = json_decode(implode("", $output), true);
 		unset($output);
 
-		// Determine package features and land user at the first available page
-		if ($data[$user_plain]["WEB_DOMAINS"] !== "0") {
-			header("Location: /list/web/");
-		} elseif ($data[$user_plain]["DNS_DOMAINS"] !== "0") {
-			header("Location: /list/dns/");
+		// Determine landing page: admin sees user list, others get mail or db
+		if ($_SESSION["userContext"] === "admin" && empty($_SESSION["look"])) {
+			header("Location: /list/user/");
 		} elseif ($data[$user_plain]["MAIL_DOMAINS"] !== "0") {
 			header("Location: /list/mail/");
 		} elseif ($data[$user_plain]["DATABASES"] !== "0") {
 			header("Location: /list/db/");
-		} elseif ($data[$user_plain]["CRON_JOBS"] !== "0") {
-			header("Location: /list/cron/");
-		} elseif ($data[$user_plain]["BACKUPS"] !== "0") {
-			header("Location: /list/backup/");
 		} else {
-			header("Location: /error/");
+			header("Location: /list/user/");
 		}
 		exit();
 	}
@@ -368,22 +362,12 @@ function authenticate_user($user, $password, $twofa = "") {
 				} else {
 					if ($_SESSION["userContext"] === "admin") {
 						header("Location: /list/user/");
+					} elseif ($data[$user]["MAIL_DOMAINS"] != "0") {
+						header("Location: /list/mail/");
+					} elseif ($data[$user]["DATABASES"] != "0") {
+						header("Location: /list/db/");
 					} else {
-						if ($data[$user]["WEB_DOMAINS"] != "0") {
-							header("Location: /list/web/");
-						} elseif ($data[$user]["DNS_DOMAINS"] != "0") {
-							header("Location: /list/dns/");
-						} elseif ($data[$user]["MAIL_DOMAINS"] != "0") {
-							header("Location: /list/mail/");
-						} elseif ($data[$user]["DATABASES"] != "0") {
-							header("Location: /list/db/");
-						} elseif ($data[$user]["CRON_JOBS"] != "0") {
-							header("Location: /list/cron/");
-						} elseif ($data[$user]["BACKUPS"] != "0") {
-							header("Location: /list/backup/");
-						} else {
-							header("Location: /error/");
-						}
+						header("Location: /list/user/");
 					}
 					exit();
 				}

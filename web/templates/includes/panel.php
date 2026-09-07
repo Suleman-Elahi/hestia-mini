@@ -184,6 +184,22 @@
 								<?php } ?>
 							<?php } ?>
 
+							<!-- Web Terminal -->
+							<?php if (isset($_SESSION["WEB_TERMINAL"]) && !empty($_SESSION["WEB_TERMINAL"]) && $_SESSION["WEB_TERMINAL"] == "true") { ?>
+								<?php if ($_SESSION["userContext"] === "admin" && $_SESSION["look"] === "admin" && $_SESSION["POLICY_SYSTEM_PROTECTED_ADMIN"] == "yes") { ?>
+									<!-- Hide web terminal when impersonating admin -->
+								<?php } elseif ($_SESSION["login_shell"] != "nologin") { ?>
+									<li class="top-bar-menu-item">
+										<a title="<?= _("Web terminal") ?>" class="top-bar-menu-link <?php if ($TAB == "TERMINAL") {
+	echo "active";
+} ?>" href="/list/terminal/">
+											<i class="fas fa-terminal"></i>
+											<span class="top-bar-menu-link-label u-hide-desktop"><?= _("Web terminal") ?></span>
+										</a>
+									</li>
+								<?php } ?>
+							<?php } ?>
+
 							<!-- Edit User -->
 							<?php if ($_SESSION["userContext"] === "admin" && ($_SESSION["look"] !== "" && $user == "admin")) { ?>
 								<!-- Hide 'edit user' entry point from other administrators for default 'admin' account-->

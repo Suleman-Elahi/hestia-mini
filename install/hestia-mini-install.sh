@@ -104,6 +104,7 @@ ADMIN_PASSWORD=''
 PROXY_PORT='8080'
 PMA_BACKEND_PORT='8081'
 PGA_BACKEND_PORT='8082'
+PANEL_DOMAIN=''
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -157,6 +158,10 @@ while [ $# -gt 0 ]; do
 			PROXY_PORT="$2"
 			shift 2
 			;;
+		--panel-domain)
+			PANEL_DOMAIN="$2"
+			shift 2
+			;;
 		--help | -h)
 			echo "Usage: $0 [options]"
 			echo "  --yes, -y             Non-interactive: assume yes to all prompts"
@@ -169,6 +174,7 @@ while [ $# -gt 0 ]; do
 			echo "  --admin-email EMAIL   Admin contact email (default: admin@<hostname>)"
 			echo "  --admin-password PASS Admin password (default: randomly generated)"
 			echo "  --proxy-port PORT     Reverse-proxy port for phpMyAdmin/phpPgAdmin (default: 8080)"
+			echo "  --panel-domain DOMAIN Panel domain for Let's Encrypt SSL (e.g. panel.example.com)"
 			exit 0
 			;;
 		*)
@@ -864,6 +870,7 @@ SERVER_SMTP_PASSWD=''
 SERVER_SMTP_SECURITY='ssl'
 WEB_TERMINAL='true'
 WEB_TERMINAL_PORT='8085'
+APP_NAME='Hestia-Mini'
 EOF
 ln -sf "$HESTIA/conf/hestia.conf" "$HESTIA/conf/minipanel.conf"
 mkdir -p "$HESTIA/conf/defaults"
@@ -968,120 +975,18 @@ check_result $? "Failed to start php${fpm_v}-fpm"
 #                 Configure phpMyAdmin                      #
 #----------------------------------------------------------#
 
-if [ "$PMA_INSTALL" = 'yes' ]; then
-	echo -e "\n[ * ] Installing phpMyAdmin v$pma_v..."
-	if [ ! -d /usr/share/phpmyadmin ] || [ "$(jq -r .version /usr/share/phpmyadmin/package.json 2> /dev/null)" != "$pma_v" ]; then
-		mkdir -p /usr/share/phpmyadmin /etc/phpmyadmin/conf.d /var/lib/phpmyadmin/tmp
-		( cd /tmp &&
-			wget --quiet --retry-connrefused "https://files.phpmyadmin.net/phpMyAdmin/$pma_v/phpMyAdmin-$pma_v-all-languages.tar.gz" &&
-			tar xzf "phpMyAdmin-$pma_v-all-languages.tar.gz" &&
-			rm -rf "phpMyAdmin-$pma_v-all-languages/doc" &&
-			cp -rf "phpMyAdmin-$pma_v-all-languages"/* /usr/share/phpmyadmin &&
-			rm -rf "phpMyAdmin-$pma_v-all-languages" "phpMyAdmin-$pma_v-all-languages.tar.gz" ) >> $LOG 2>&1
-		check_result $? "Failed to download/install phpMyAdmin"
-
-		cp -f "$HESTIA_INSTALL_DIR/phpmyadmin/config.inc.php" /etc/phpmyadmin/config.inc.php 2>> $LOG
-		sed -i "s|'configFile' => ROOT_PATH . 'config.inc.php',|'configFile' => '/etc/phpmyadmin/config.inc.php',|g" \
-			/usr/share/phpmyadmin/libraries/vendor_config.php 2> /dev/null
-
-		blowfish=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 32)
-		sed -i "s|%blowfish_secret%|$blowfish|" /etc/phpmyadmin/config.inc.php
-
-		chown -R hestiamail:www-data /var/lib/phpmyadmin/tmp
-		chmod 0770 /var/lib/phpmyadmin/tmp
-
-		# Create pmadb + control user (phpmyadmin-fixer, adapted from
-		# install/deb/phpmyadmin/pma.sh)
-		pma_ctl_pass=$(gen_pass '24' 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789')
-		mysql_cmd="mysql"
-		command -v mariadb > /dev/null 2>&1 && mysql_cmd="mariadb"
-		$mysql_cmd -uroot -e "CREATE DATABASE IF NOT EXISTS phpmyadmin;" >> $LOG 2>&1
-		$mysql_cmd -uroot -e "CREATE USER IF NOT EXISTS 'pma'@'localhost' IDENTIFIED BY '$pma_ctl_pass';" >> $LOG 2>&1
-		$mysql_cmd -uroot -e "GRANT ALL PRIVILEGES ON phpmyadmin.* TO 'pma'@'localhost'; FLUSH PRIVILEGES;" >> $LOG 2>&1
-		if [ -f "$HESTIA_INSTALL_DIR/phpmyadmin/create_tables.sql" ]; then
-			$mysql_cmd -uroot phpmyadmin < "$HESTIA_INSTALL_DIR/phpmyadmin/create_tables.sql" >> $LOG 2>&1
-		fi
-
-		cat > /etc/phpmyadmin/conf.d/01-localhost.php << PMACONF
-<?php
-\$cfg['Servers'][\$i]['host'] = 'localhost';
-\$cfg['Servers'][\$i]['port'] = '3306';
-\$cfg['Servers'][\$i]['pmadb'] = 'phpmyadmin';
-\$cfg['Servers'][\$i]['controluser'] = 'pma';
-\$cfg['Servers'][\$i]['controlpass'] = '$pma_ctl_pass';
-\$cfg['Servers'][\$i]['bookmarktable'] = 'pma__bookmark';
-\$cfg['Servers'][\$i]['relation'] = 'pma__relation';
-\$cfg['Servers'][\$i]['userconfig'] = 'pma__userconfig';
-\$cfg['Servers'][\$i]['table_info'] = 'pma__table_info';
-\$cfg['Servers'][\$i]['column_info'] = 'pma__column_info';
-\$cfg['Servers'][\$i]['history'] = 'pma__history';
-\$cfg['Servers'][\$i]['recent'] = 'pma__recent';
-\$cfg['Servers'][\$i]['table_uiprefs'] = 'pma__table_uiprefs';
-\$cfg['Servers'][\$i]['tracking'] = 'pma__tracking';
-\$cfg['Servers'][\$i]['table_coords'] = 'pma__table_coords';
-\$cfg['Servers'][\$i]['pdf_pages'] = 'pma__pdf_pages';
-\$cfg['Servers'][\$i]['designer_coords'] = 'pma__designer_coords';
-\$cfg['Servers'][\$i]['savedsearches'] = 'pma__savedsearches';
-\$cfg['Servers'][\$i]['central_columns'] = 'pma__central_columns';
-\$cfg['Servers'][\$i]['designer_settings'] = 'pma__designer_settings';
-\$cfg['Servers'][\$i]['export_templates'] = 'pma__export_templates';
-\$cfg['Servers'][\$i]['navigationhiding'] = 'pma__navigationhiding';
-\$cfg['Servers'][\$i]['users'] = 'pma__users';
-\$cfg['Servers'][\$i]['usergroups'] = 'pma__usergroups';
-\$cfg['Servers'][\$i]['hide_db'] = 'information_schema';
-PMACONF
-		cat > /etc/phpmyadmin/conf.d/99-tempdir.php << PMATMP
-<?php
-\$cfg['TempDir'] = '/var/lib/phpmyadmin/tmp';
-PMATMP
-
-		chown -R root:hestiamail /etc/phpmyadmin/
-		chmod 640 /etc/phpmyadmin/config.inc.php /etc/phpmyadmin/conf.d/*.php
-		chmod 750 /etc/phpmyadmin/conf.d/
-	else
-		echo "  phpMyAdmin already installed at version $pma_v, skipping."
-	fi
-else
-	echo -e "\n[ * ] Skipping phpMyAdmin install (disabled via --no-pma)."
+if [ -f "$SCRIPT_DIR/modules/configure-phpmyadmin.sh" ]; then
+	source "$SCRIPT_DIR/modules/configure-phpmyadmin.sh"
+	configure_phpmyadmin
 fi
 
 #----------------------------------------------------------#
 #                 Configure phpPgAdmin                      #
 #----------------------------------------------------------#
 
-if [ "$PGA_INSTALL" = 'yes' ] && [ "$PGSQL_ENABLE" = 'yes' ]; then
-	echo -e "\n[ * ] Installing phpPgAdmin v$pga_v..."
-	if [ ! -d /usr/share/phppgadmin ]; then
-		mkdir -p /etc/phppgadmin /usr/share/phppgadmin
-		( cd /tmp &&
-			wget --retry-connrefused --quiet "https://github.com/hestiacp/phppgadmin/releases/download/v$pga_v/phppgadmin-v$pga_v.tar.gz" &&
-			tar xzf "phppgadmin-v$pga_v.tar.gz" -C /usr/share/phppgadmin/ &&
-			rm -f "phppgadmin-v$pga_v.tar.gz" ) >> $LOG 2>&1
-		check_result $? "Failed to download/install phpPgAdmin"
-
-		cp -f "$HESTIA_INSTALL_DIR/pga/config.inc.php" /etc/phppgadmin/config.inc.php 2>> $LOG
-		if [ ! -L /usr/share/phppgadmin/conf/config.inc.php ]; then
-			ln -sf /etc/phppgadmin/config.inc.php /usr/share/phppgadmin/conf/config.inc.php
-		fi
-
-		chown -R root:hestiamail /etc/phppgadmin/
-		chmod 640 /etc/phppgadmin/config.inc.php
-	else
-		echo "  phpPgAdmin already installed, skipping."
-	fi
-
-	# Ensure PostgreSQL accepts password auth for the pma/panel-managed
-	# roles (matches upstream Hestia's pg_hba.conf handling)
-	PG_HBA=$(find /etc/postgresql -maxdepth 2 -name pg_hba.conf 2> /dev/null | sort -V | tail -n1)
-	if [ -n "$PG_HBA" ] && ! grep -q "^host.*all.*all.*127.0.0.1/32.*md5" "$PG_HBA"; then
-		echo "host    all             all             127.0.0.1/32            md5" >> "$PG_HBA"
-		echo "host    all             all             ::1/128                 md5" >> "$PG_HBA"
-		systemctl reload postgresql 2> /dev/null
-	fi
-elif [ "$PGA_INSTALL" = 'yes' ] && [ "$PGSQL_ENABLE" != 'yes' ]; then
-	echo -e "\n[ * ] Skipping phpPgAdmin (PostgreSQL disabled via --no-pgsql)."
-else
-	echo -e "\n[ * ] Skipping phpPgAdmin install (disabled via --no-pga)."
+if [ -f "$SCRIPT_DIR/modules/configure-phppgadmin.sh" ]; then
+	source "$SCRIPT_DIR/modules/configure-phppgadmin.sh"
+	configure_phppgadmin
 fi
 
 #----------------------------------------------------------#
@@ -1174,7 +1079,7 @@ chown hestiaweb:hestiaweb /var/spool/cron/crontabs/hestiaweb
 
 echo -e "\n[ * ] Generating self-signed SSL certificate..."
 ssl_bundle=$(mktemp)
-$HESTIA/bin/v-generate-ssl-cert "$(hostname -f 2>/dev/null || hostname)" "$ADMIN_EMAIL" 'US' 'California' 'San Francisco' 'Hestia Control Panel' 'IT' > "$ssl_bundle" 2>> "$LOG"
+$HESTIA/bin/v-generate-ssl-cert "$(hostname -f 2>/dev/null || hostname)" "$ADMIN_EMAIL" 'US' 'California' 'San Francisco' 'Hestia-Mini' 'IT' > "$ssl_bundle" 2>> "$LOG"
 check_result $? "Failed to generate the default SSL certificate"
 
 crt_end=$(grep -n "END CERTIFICATE-" "$ssl_bundle" | head -n1 | cut -f1 -d:)
@@ -1345,10 +1250,23 @@ else
 	echo -e "[${GREEN} OK ${NC}]"
 fi
 
+#----------------------------------------------------------#
+#              Configure Panel SSL (Let's Encrypt)         #
+#----------------------------------------------------------#
+
+if [ -f "$SCRIPT_DIR/modules/configure-ssl.sh" ]; then
+	source "$SCRIPT_DIR/modules/configure-ssl.sh"
+	configure_panel_ssl
+fi
+
 echo -e "\n====================================================="
 echo -e "  Hestia-Mini has been installed successfully!"
 echo -e "\n"
-echo -e "  Admin URL:  https://$(hostname):$port"
+if [ -n "${PANEL_DOMAIN:-}" ]; then
+	echo -e "  Admin URL:  https://$PANEL_DOMAIN:$port"
+else
+	echo -e "  Admin URL:  https://$(hostname):$port"
+fi
 echo -e "  Username:   admin"
 echo -e "  Password:   $adminpass"
 echo -e "\n"

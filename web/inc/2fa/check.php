@@ -14,7 +14,7 @@ if (isset($argv[1]) && isset($argv[2])) {
 	exit();
 }
 
-$tfa = new TwoFactorAuth(new QRServerProvider(), "Hestia Control Panel");
+$tfa = new TwoFactorAuth(new QRServerProvider(), "Hestia-Mini");
 
 // Verify code
 $result = $tfa->verifyCode($secret, $token);
