@@ -18,9 +18,26 @@ VERSION='debian'
 HESTIA='/usr/local/hestia'
 LOG="/root/hestia_mini_install-$(date +%d%m%Y%H%M).log"
 spinner="/\-|"
-os=$(cat /etc/os-release | grep ^ID= | cut -f 2 -d =)
-release=$(cat /etc/debian_version | tr "." "\n" | head -n1)
-codename=$(cat /etc/os-release | grep VERSION= | cut -f 2 -d \( | cut -f 1 -d \))
+# Ubuntu can expose a Debian compatibility value (for example "trixie/sid")
+# in /etc/debian_version. Use /etc/os-release for Ubuntu and reserve that file
+# for deriving the Debian major release only.
+. /etc/os-release
+os="${ID,,}"
+case "$os" in
+	ubuntu)
+		release="$VERSION_ID"
+		codename="${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}"
+		;;
+	debian)
+		release=$(grep -o "[0-9]\\{1,2\\}" /etc/debian_version | head -n1)
+		codename="${VERSION_CODENAME:-}"
+		;;
+	*)
+		release=''
+		codename=''
+		;;
+esac
+VERSION="$os"
 architecture=$(arch)
 HESTIA_INSTALL_DIR="$HESTIA/install/deb"
 HESTIA_COMMON_DIR="$HESTIA/install/common"
@@ -73,7 +90,7 @@ software="acl apt-transport-https ca-certificates clamav-daemon cron curl doveco
   php${fpm_v}-xml php${fpm_v}-zip php${fpm_v}-fpm spamd unrar-free
   unzip util-linux vim-common whois zip zstd restic composer"
 
-installer_dependencies="apt-transport-https ca-certificates curl dirmngr gnupg openssl wget sudo"
+installer_dependencies="apt-transport-https ca-certificates curl dirmngr gnupg openssl software-properties-common wget sudo"
 
 #----------------------------------------------------------#
 #                  Variables & Functions                     #
@@ -92,6 +109,23 @@ FM_INSTALL='yes'
 ADMIN_EMAIL=''
 ADMIN_PASSWORD=''
 PANEL_DOMAIN=''
+POLICY_RC_D_BACKUP=''
+POLICY_RC_D_ACTIVE='no'
+
+cleanup_policy_rc_d() {
+	if [ "$POLICY_RC_D_ACTIVE" != 'yes' ]; then
+		return
+	fi
+
+	if [ -n "$POLICY_RC_D_BACKUP" ] && [ -f "$POLICY_RC_D_BACKUP" ]; then
+		mv -f "$POLICY_RC_D_BACKUP" /usr/sbin/policy-rc.d
+	else
+		rm -f /usr/sbin/policy-rc.d
+	fi
+	POLICY_RC_D_ACTIVE='no'
+}
+
+trap cleanup_policy_rc_d EXIT
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -539,14 +573,24 @@ check_result $? "Failed to configure existing packages. Check details in: $LOG"
 apt-get -f install -y >> "$LOG" 2>&1
 check_result $? "Failed to repair package dependencies. Check details in: $LOG"
 
-# Disable daemon autostart during apt-get install (matches original HestiaCP)
+# Disable daemon autostart during apt-get install (matches original HestiaCP).
+# Preserve any host policy and restore it if the installation exits early.
+if [ -e /usr/sbin/policy-rc.d ]; then
+	POLICY_RC_D_BACKUP="/tmp/hestia-mini-policy-rc.d.$$"
+	cp -a /usr/sbin/policy-rc.d "$POLICY_RC_D_BACKUP"
+	check_result $? "Failed to back up the existing policy-rc.d"
+fi
 echo -e '#!/bin/sh\nexit 101' > /usr/sbin/policy-rc.d
 chmod a+x /usr/sbin/policy-rc.d
+POLICY_RC_D_ACTIVE='yes'
 
-# Clean up any leftover hestia repo list before initial dependency check
-rm -f /etc/apt/sources.list.d/hestia.list /etc/apt/sources.list.d/hestia.list.tmp
+# Clean up package sources owned by a previous Mini installation before the
+# dependency update. This also removes an invalid Debian Sury source left by
+# older installer versions on Ubuntu.
+rm -f /etc/apt/sources.list.d/hestia.list /etc/apt/sources.list.d/hestia.list.tmp \
+	/etc/apt/sources.list.d/php.list /etc/apt/sources.list.d/nodejs.list
 
-if [ "$release" -lt 12 ]; then
+if [ "$os" = 'debian' ] && [ "$release" -lt 12 ]; then
 	software=$(echo "$software" | sed -e "s/spamd/spamassassin/g")
 fi
 
@@ -559,9 +603,33 @@ check_result $? "Failed to install installer dependencies"
 echo -e "\n[ * ] Adding PHP and Hestia repositories..."
 mkdir -p /usr/share/keyrings /etc/apt/sources.list.d
 
-if install_sury_key; then
-	echo "deb [arch=$ARCH signed-by=/usr/share/keyrings/sury-keyring.gpg] https://packages.sury.org/php/ $codename main" > /etc/apt/sources.list.d/php.list
-fi
+case "$os" in
+	debian)
+		if ! install_sury_key; then
+			check_result 1 "Failed to install the Sury PHP repository key."
+		fi
+		echo "deb [arch=$ARCH signed-by=/usr/share/keyrings/sury-keyring.gpg] https://packages.sury.org/php/ $codename main" > /etc/apt/sources.list.d/php.list
+		;;
+	ubuntu)
+		case "$release" in
+			22.04 | 24.04)
+				# Ubuntu uses the Ondřej PHP PPA; packages.sury.org is Debian-only
+				# for these releases. Noble needs this temporary weak-key workaround.
+				if [ "$release" = '24.04' ]; then
+					echo 'APT::Key::Assert-Pubkey-Algo "";' > /etc/apt/apt.conf.d/99weakkey-warning
+				fi
+				add-apt-repository -y ppa:ondrej/php >> "$LOG" 2>&1
+				check_result $? "Failed to add the Ondřej PHP repository."
+				;;
+			*)
+				if ! install_sury_key; then
+					check_result 1 "Failed to install the Sury PHP repository key."
+				fi
+				echo "deb [arch=$ARCH signed-by=/usr/share/keyrings/sury-keyring.gpg] https://packages.sury.org/php/ $codename main" > /etc/apt/sources.list.d/php.list
+				;;
+		esac
+		;;
+esac
 
 if ! install_hestia_key; then
 	check_result 1 "Failed to install the Hestia repository key."
@@ -595,14 +663,14 @@ echo -ne '\b\b\b\b\b\b'
 wait $BACK_PID
 install_status=$?
 if [ "$install_status" -ne 0 ]; then
-	rm -f /usr/sbin/policy-rc.d
 	echo -e "\n[ ! ] Package manager diagnostics (last 120 log lines):"
 	tail -n 120 "$LOG"
 	check_result "$install_status" "Failed to install required software packages. Check details in: $LOG"
 fi
 
-# Restore service autostart policy
-rm -f /usr/sbin/policy-rc.d
+# Restore the daemon autostart policy and disable the exit trap after success.
+cleanup_policy_rc_d
+trap - EXIT
 
 #----------------------------------------------------------#
 #                 Configure Hestia base                     #
@@ -757,7 +825,7 @@ rm -f "$HESTIA/conf/minipanel.conf"
 cat > $HESTIA/conf/hestia.conf << EOF
 MAIL_SYSTEM='exim'
 ANTIVIRUS_SYSTEM='clamav-daemon'
-ANTISPAM_SYSTEM='$([ "$release" -lt 12 ] && echo 'spamassassin' || echo 'spamd')'
+ANTISPAM_SYSTEM='$([ "$os" = 'debian' ] && [ "$release" -lt 12 ] && echo 'spamassassin' || echo 'spamd')'
 IMAP_SYSTEM='dovecot'
 # Nginx can serve optional, administrator-provisioned webmail clients.
 # WEBMAIL_SYSTEM intentionally stays unset: Mini never installs a client.
@@ -845,7 +913,7 @@ systemctl enable clamav-daemon 2>/dev/null
 freshclam > /dev/null 2>&1 &
 
 echo -e "\n[ * ] Configuring SpamAssassin (antispam)..."
-if [ "$release" -lt 12 ]; then
+if [ "$os" = 'debian' ] && [ "$release" -lt 12 ]; then
 	systemctl enable spamassassin 2>/dev/null
 else
 	systemctl enable spamd 2>/dev/null
