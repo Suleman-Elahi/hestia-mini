@@ -84,40 +84,42 @@ else
 	get_user_ip
 fi
 
+# Retrieve the client selected for this mail domain before building its HTTPS
+# webmail virtual host.
+WEBMAIL=$(get_object_value 'mail' 'DOMAIN' "$domain" '$WEBMAIL')
+
 # Call routine to add SSL configuration to mail domain
 add_mail_ssl_config
 
-if [ "$WEBMAIL" == "roundcube" ]; then
-	WEBMAIL_TEMPLATE="default"
-	if [ -n "$PROXY_SYSTEM" ]; then
-		PROXY_TEMPLATE="default"
+# Generate the HTTPS webmail vhost only when this mail domain already has
+# a configured client. Mail SSL must not create a dead webmail hostname.
+if [ -n "$WEBMAIL" ]; then
+	if [ "$WEBMAIL" == "roundcube" ]; then
+		WEBMAIL_TEMPLATE="default"
+		if [ -n "$PROXY_SYSTEM" ]; then
+			PROXY_TEMPLATE="default"
+		fi
+		WEBMAIL_TEMPLATE="default"
+		if [ "$WEB_SYSTEM" = "nginx" ]; then
+			WEBMAIL_TEMPLATE="web_system"
+		fi
+	elif [ "$WEBMAIL" == "snappymail" ]; then
+		WEBMAIL_TEMPLATE="snappymail"
+		if [ -n "$PROXY_SYSTEM" ]; then
+			PROXY_TEMPLATE="default_snappymail"
+		fi
+	elif [ "$WEBMAIL" == "rainloop" ]; then
+		WEBMAIL_TEMPLATE="rainloop"
+		if [ -n "$PROXY_SYSTEM" ]; then
+			PROXY_TEMPLATE="default_rainloop"
+		fi
 	fi
-	# Add webmail configuration to mail domain
-	WEBMAIL_TEMPLATE="default"
-	if [ "$WEB_SYSTEM" = "nginx" ]; then
-		WEBMAIL_TEMPLATE="web_system"
-	fi
-elif [ "$WEBMAIL" == "snappymail" ]; then
-	WEBMAIL_TEMPLATE="snappymail"
-	if [ -n "$PROXY_SYSTEM" ]; then
-		PROXY_TEMPLATE="default_snappymail"
-	fi
-elif [ "$WEBMAIL" == "rainloop" ]; then
-	WEBMAIL_TEMPLATE="rainloop"
-	if [ -n "$PROXY_SYSTEM" ]; then
-		PROXY_TEMPLATE="default_rainloop"
-	fi
-else
-	WEBMAIL_TEMPLATE="disabled"
-	if [ -n "$PROXY_SYSTEM" ]; then
-		PROXY_TEMPLATE="default_disabled"
-	fi
-fi
 
-add_webmail_config "$WEB_SYSTEM" "${WEBMAIL_TEMPLATE}.stpl"
+	add_webmail_config "$WEB_SYSTEM" "${WEBMAIL_TEMPLATE}.stpl"
 
-if [ -n "$PROXY_SYSTEM" ]; then
-	add_webmail_config "$PROXY_SYSTEM" "${PROXY_TEMPLATE}.stpl"
+	if [ -n "$PROXY_SYSTEM" ]; then
+		add_webmail_config "$PROXY_SYSTEM" "${PROXY_TEMPLATE}.stpl"
+	fi
 fi
 
 # Increase value for domain

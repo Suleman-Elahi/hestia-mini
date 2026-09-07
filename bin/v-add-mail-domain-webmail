@@ -60,6 +60,12 @@ if [ -z "$webmail" ]; then
 	done
 fi
 
+# A webmail vhost is useful only when an administrator has installed and
+# configured a supported client. Do not create a disabled hostname otherwise.
+if [ -z "$WEBMAIL_SYSTEM" ] || [ -z "$webmail" ]; then
+	check_result "$E_INVALID" "No webmail client is configured"
+fi
+
 check_args '2' "$#" 'USER DOMAIN [WEBMAIL] [RESTART]'
 is_format_valid 'user' 'domain' 'restart'
 is_system_enabled "$WEB_SYSTEM" 'WEB_SYSTEM'
@@ -134,10 +140,7 @@ else
 			PROXY_TEMPLATE="default_$webmail"
 		fi
 	else
-		WEBMAIL_TEMPLATE="disabled"
-		if [ -n "$PROXY_SYSTEM" ]; then
-			PROXY_TEMPLATE="default_disabled"
-		fi
+		check_result "$E_INVALID" "No template is available for webmail client: $webmail"
 	fi
 
 	add_webmail_config "$WEB_SYSTEM" "${WEBMAIL_TEMPLATE}.tpl"

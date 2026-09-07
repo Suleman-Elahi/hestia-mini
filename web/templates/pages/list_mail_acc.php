@@ -182,7 +182,7 @@ if (!empty($_SESSION["WEBMAIL_ALIAS"])) {
 								<li class="units-table-row-action" data-key-action="href">
 									<a
 										class="units-table-row-action-link"
-										href="http://<?= tohtml($v_webmail_alias) ?>.<?= tohtml($_GET["domain"]) ?>/?<?= tohtml(http_build_query(["_user" => $key . '@' . $_GET["domain"]])) ?>"
+										href="https://<?= tohtml($v_webmail_alias) ?>.<?= tohtml($_GET["domain"]) ?>/?<?= tohtml(http_build_query(["_user" => $key . '@' . $_GET["domain"]])) ?>"
 										target="_blank"
 										title="<?= tohtml( _("Open Webmail")) ?>"
 									>
@@ -198,7 +198,7 @@ if (!empty($_SESSION["WEBMAIL_ALIAS"])) {
 										<li class="units-table-row-action" data-key-action="href">
 											<a
 												class="units-table-row-action-link"
-												href="http://<?= tohtml($v_webmail_alias) ?>.<?= tohtml($_GET["domain"]) ?>/?<?= tohtml(http_build_query(["_user" => $key . '@' . $_GET["domain"]])) ?>"
+												href="https://<?= tohtml($v_webmail_alias) ?>.<?= tohtml($_GET["domain"]) ?>/?<?= tohtml(http_build_query(["_user" => $key . '@' . $_GET["domain"]])) ?>"
 												target="_blank"
 												title="<?= tohtml( _("Open Webmail")) ?>"
 											>

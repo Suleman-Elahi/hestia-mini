@@ -25,7 +25,8 @@ if (substr($_SERVER["SCRIPT_FILENAME"], 0, 22) == "/usr/local/hestia/bin/") {
 }
 
 function checkStrictness($level) {
-	if ($level >= $_SESSION["POLICY_CSRF_STRICTNESS"]) {
+	$csrf_strictness = isset($_SESSION["POLICY_CSRF_STRICTNESS"]) ? $_SESSION["POLICY_CSRF_STRICTNESS"] : 0;
+	if ($level >= $csrf_strictness) {
 		return true;
 	} else {
 		http_response_code(400);
@@ -113,6 +114,7 @@ function prevent_get_csrf() {
 					"/list/domain/index.php",
 					"/list/mail/index.php",
 					"/list/terminal/index.php",
+					"/list/terminal/",
 					"/list/log/index.php",
 					"/list/log/auth/index.php",
 					"/list/package/index.php",

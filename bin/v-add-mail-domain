@@ -188,11 +188,13 @@ if [ -n "$DNS_SYSTEM" ] && [ "$dkim" = 'yes' ]; then
 	fi
 fi
 
-# Add webmail configuration to mail domain
-if [ -n "$WEB_SYSTEM" ] || [ -n "$PROXY_SYSTEM" ]; then
-	if [ -n "$IMAP_SYSTEM" ]; then
-		$BIN/v-add-mail-domain-webmail "$user" "$domain" '' 'no'
-	fi
+# Add webmail routing only for an administrator-provisioned client. Hestia-Mini
+# deliberately does not install a webmail application or create disabled vhosts.
+if { [ -n "$WEB_SYSTEM" ] || [ -n "$PROXY_SYSTEM" ]; } && [ -n "$IMAP_SYSTEM" ] && [ -n "$WEBMAIL_SYSTEM" ]; then
+	for client in ${WEBMAIL_SYSTEM//,/ }; do
+		webmail="$client"
+	done
+	$BIN/v-add-mail-domain-webmail "$user" "$domain" "$webmail" 'no'
 fi
 
 # Run extension trigger

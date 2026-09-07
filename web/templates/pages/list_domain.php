@@ -65,7 +65,7 @@
 
 <div class="container">
 
-	<h1 class="u-text-center u-hide-desktop u-mt20 u-pr30 u-mb20 u-pl30"><?= tohtml( _("Domain Proxy")) ?></h1>
+	<h1 class="u-text-center u-hide-desktop u-mt20 u-pr30 u-mb20 u-pl30"><?= tohtml( _("Domains")) ?></h1>
 
 	<div class="units-table js-units-container">
 		<div class="units-table-header">
@@ -87,6 +87,13 @@
 			$i = 0;
 			foreach ($data as $key => $value) {
 				++$i;
+				$domain_type = $data[$key]['TYPE'] ?? 'proxy';
+				$is_proxy_domain = $domain_type !== 'mail';
+				$is_mail_domain = $domain_type !== 'proxy';
+				$domain_url = $is_proxy_domain
+					? '/edit/domain/?' . http_build_query(["domain" => $key, "token" => $_SESSION["token"]])
+					: '/list/mail/?' . http_build_query(["domain" => $key, "token" => $_SESSION["token"]]);
+				$domain_action_title = $is_proxy_domain ? _('Edit Domain') : _('Mail Accounts');
 				if ($data[$key]['SUSPENDED'] == 'yes') {
 					$status = 'suspended';
 					$spnd_action = 'unsuspend';
@@ -111,8 +118,8 @@
 					$ssl_icon_class = ($status == 'suspended') ? '' : 'icon-green';
 					$ssl_title = _('Enabled');
 				}
-				$algorithm = $data[$key]['ALGORITHM'] ?? 'round_robin';
-				$backends = $data[$key]['TARGETS'] ?? '';
+				$algorithm = $is_proxy_domain ? ($data[$key]['ALGORITHM'] ?? 'round_robin') : _('Mail');
+				$backends = $is_proxy_domain ? ($data[$key]['TARGETS'] ?? '') : '—';
 				if (is_array($backends)) {
 					$backends = implode(', ', $backends);
 				}
@@ -122,18 +129,19 @@
 				data-sort-name="<?= tohtml($key) ?>">
 				<div class="units-table-cell">
 					<div>
-						<input id="check<?= tohtml($i) ?>" class="js-unit-checkbox" type="checkbox" title="<?= tohtml( _("Select")) ?>" name="domain[]" value="<?= tohtml($key) ?>" <?= tohtml($display_mode) ?>>
+						<input id="check<?= tohtml($i) ?>" class="js-unit-checkbox" type="checkbox" title="<?= tohtml( _("Select")) ?>" name="domain[]" value="<?= tohtml($key) ?>" <?= tohtml($display_mode) ?><?= $is_proxy_domain ? '' : ' disabled' ?>>
 						<label for="check<?= tohtml($i) ?>" class="u-hide-desktop"><?= tohtml( _("Select")) ?></label>
 					</div>
 				</div>
 				<div class="units-table-cell units-table-heading-cell u-text-bold">
 					<span class="u-hide-desktop"><?= tohtml( _("Name")) ?>:</span>
-					<a href="/edit/domain/?<?= tohtml(http_build_query(["domain" => $key, "token" => $_SESSION["token"]])) ?>" title="<?= tohtml( _("Edit Domain")) ?>: <?= tohtml($key) ?>">
+					<a href="<?= tohtml($domain_url) ?>" title="<?= tohtml($domain_action_title) ?>: <?= tohtml($key) ?>">
 						<?= tohtml($key) ?>
 					</a>
 				</div>
 				<div class="units-table-cell">
 					<ul class="units-table-row-actions">
+						<?php if ($is_proxy_domain) { ?>
 						<?php if ($read_only !== "true") { ?>
 							<?php if ($data[$key]["SUSPENDED"] == "no") { ?>
 								<li class="units-table-row-action shortcut-enter" data-key-action="href">
@@ -171,6 +179,7 @@
 									<span class="u-hide-desktop"><?= tohtml( _("Delete")) ?></span>
 								</a>
 							</li>
+						<?php } ?>
 						<?php } ?>
 					</ul>
 				</div>

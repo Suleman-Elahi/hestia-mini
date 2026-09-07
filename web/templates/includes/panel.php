@@ -335,6 +335,26 @@
 						</a>
 					</li>
 
+				<!-- Terminal tab -->
+				<?php if (isset($_SESSION["WEB_TERMINAL"]) && !empty($_SESSION["WEB_TERMINAL"]) && $_SESSION["WEB_TERMINAL"] == "true") { ?>
+					<?php if (!($_SESSION["userContext"] === "admin" && $_SESSION["look"] === "admin" && $_SESSION["POLICY_SYSTEM_PROTECTED_ADMIN"] == "yes")) { ?>
+						<?php if ($_SESSION["login_shell"] != "nologin") { ?>
+							<li class="main-menu-item">
+								<a class="main-menu-item-link <?php if ($TAB == "TERMINAL") {
+									echo "active";
+								} ?>" href="/list/terminal/" title="<?= _("Terminal") ?>">
+									<p class="main-menu-item-label"><?= _("TERMINAL") ?><i class="fas fa-terminal"></i></p>
+									<ul class="main-menu-stats">
+										<li>
+											<?= _("Shell Access") ?>
+										</li>
+									</ul>
+								</a>
+							</li>
+						<?php } ?>
+					<?php } ?>
+				<?php } ?>
+
 			</ul>
 		</div>
 	</nav>

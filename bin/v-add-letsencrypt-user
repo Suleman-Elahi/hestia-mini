@@ -126,10 +126,6 @@ nonce=$(curl -s -I "$LE_API/directory" | grep -i 'replay-nonce:' | head -n1 | cu
 # Creating ACME account
 url="$LE_API/acme/new-acct"
 payload='{"termsOfServiceAgreed": true}'
-if [[ "$EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-	payload="{\"termsOfServiceAgreed\": true, \"contact\": [\"mailto:$EMAIL\"]}"
-fi
-
 answer=$(query_le_v2 "$url" "$payload" "$nonce")
 kid=$(echo "$answer" | grep -i location: | cut -f2 -d ' ' | tr -d '\r')
 

@@ -759,6 +759,13 @@ MAIL_SYSTEM='exim'
 ANTIVIRUS_SYSTEM='clamav-daemon'
 ANTISPAM_SYSTEM='$([ "$release" -lt 12 ] && echo 'spamassassin' || echo 'spamd')'
 IMAP_SYSTEM='dovecot'
+# Nginx can serve optional, administrator-provisioned webmail clients.
+# WEBMAIL_SYSTEM intentionally stays unset: Mini never installs a client.
+WEB_SYSTEM='nginx'
+WEB_PORT='80'
+WEB_SSL_PORT='443'
+WEBMAIL_ALIAS='webmail'
+WEBMAIL_SYSTEM=''
 FILE_MANAGER='$([ "$FM_INSTALL" = 'yes' ] && echo 'true' || echo 'false')'
 API='yes'
 LANGUAGE='en'

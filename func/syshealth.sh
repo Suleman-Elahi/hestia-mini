@@ -173,6 +173,23 @@ function syshealth_repair_system_config() {
 		echo "[ ! ] Adding missing variable to hestia.conf: RELEASE_BRANCH ('release')"
 		$BIN/v-change-sys-config-value 'RELEASE_BRANCH' 'release'
 	fi
+	# Mini serves optional webmail clients through the system Nginx instance. Add
+	# the web-system values for existing installations without installing a client.
+	if [ -x /usr/sbin/nginx ]; then
+		if [[ -z $(check_key_exists 'WEB_SYSTEM') ]]; then
+			echo "[ ! ] Adding missing variable to hestia.conf: WEB_SYSTEM ('nginx')"
+			$BIN/v-change-sys-config-value 'WEB_SYSTEM' 'nginx'
+		fi
+		if [[ -z $(check_key_exists 'WEB_PORT') ]]; then
+			echo "[ ! ] Adding missing variable to hestia.conf: WEB_PORT ('80')"
+			$BIN/v-change-sys-config-value 'WEB_PORT' '80'
+		fi
+		if [[ -z $(check_key_exists 'WEB_SSL_PORT') ]]; then
+			echo "[ ! ] Adding missing variable to hestia.conf: WEB_SSL_PORT ('443')"
+			$BIN/v-change-sys-config-value 'WEB_SSL_PORT' '443'
+		fi
+	fi
+
 	# Webmail alias
 	if [ -n "$IMAP_SYSTEM" ]; then
 		if [[ -z $(check_key_exists 'WEBMAIL_ALIAS') ]]; then

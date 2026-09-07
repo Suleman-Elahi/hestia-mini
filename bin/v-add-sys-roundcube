@@ -315,6 +315,24 @@ else
 	rm -rf "${RC_INSTALL_DIR:?}/$RC_EXTRACT"
 fi
 
+# Hestia-Mini deliberately has no automatic webmail installation, but an
+# explicitly requested Roundcube setup needs the system Nginx web host.
+if [ -z "$WEB_SYSTEM" ] && [ -x /usr/sbin/nginx ]; then
+	"$BIN/v-change-sys-config-value" 'WEB_SYSTEM' 'nginx' \
+		|| fail "Failed to configure Nginx as WEB_SYSTEM"
+	WEB_SYSTEM='nginx'
+fi
+if [ -z "$WEB_PORT" ]; then
+	"$BIN/v-change-sys-config-value" 'WEB_PORT' '80' \
+		|| fail "Failed to configure WEB_PORT"
+	WEB_PORT='80'
+fi
+if [ -z "$WEB_SSL_PORT" ]; then
+	"$BIN/v-change-sys-config-value" 'WEB_SSL_PORT' '443' \
+		|| fail "Failed to configure WEB_SSL_PORT"
+	WEB_SSL_PORT='443'
+fi
+
 #----------------------------------------------------------#
 #                    Final validation                      #
 #----------------------------------------------------------#
@@ -328,6 +346,22 @@ installed_v="$(grep RCMAIL_VERSION "$RC_INSTALL_DIR/program/include/iniset.php" 
 
 [[ -f "$RC_CONFIG_DIR/config.inc.php" ]] \
 	|| fail "Configuration file $RC_CONFIG_DIR/config.inc.php is missing"
+
+# Roundcube is installed only when this command is run explicitly. Once it is
+# available, publish it for every active mail domain without requiring users to
+# recreate their mail domains.
+for user in $("$BIN/v-list-users" list); do
+	for domain in $("$BIN/v-list-mail-domains" "$user" plain | cut -f1); do
+		if "$BIN/v-add-mail-domain-webmail" "$user" "$domain" 'roundcube' 'no' 'quiet'; then
+			webmail_routes_added='yes'
+		fi
+	done
+done
+
+if [ "$webmail_routes_added" = 'yes' ]; then
+	[ -n "$WEB_SYSTEM" ] && "$BIN/v-restart-web" 'yes'
+	[ -n "$PROXY_SYSTEM" ] && "$BIN/v-restart-proxy" 'yes'
+fi
 
 #----------------------------------------------------------#
 #                       Hestia                             #
