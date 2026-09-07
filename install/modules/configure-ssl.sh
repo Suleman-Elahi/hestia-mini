@@ -149,6 +149,11 @@ DEPLOY_HOOK
 
 	PANEL_DOMAIN="$panel_domain"
 
+	# The Web Terminal reads its allowed panel origins at startup. Reload it
+	# after persisting the panel domain so WebSocket upgrades are accepted.
+	systemctl restart hestia-web-terminal >> "$LOG" 2>&1
+	warn_only $? "Could not restart the web terminal service after setting the panel domain"
+
 	echo -e "  ${GREEN}Let's Encrypt SSL certificate installed successfully!${NC}"
 	echo "  Certificate will auto-renew via certbot timer."
 	echo "  Panel domain: https://$panel_domain:$port"
