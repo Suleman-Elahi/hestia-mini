@@ -695,6 +695,22 @@ cp -rf "$MINIPANEL_SRC/func/internal/"* $HESTIA/func/internal/ 2>> $LOG
 cp -rf "$MINIPANEL_SRC/web/"* $HESTIA/web/ 2>> $LOG
 check_result $? "Failed to copy web/ UI from $MINIPANEL_SRC/web"
 
+# Copy web-terminal backend
+if [ -d "$MINIPANEL_SRC/src/deb/web-terminal" ]; then
+	mkdir -p "$HESTIA/web-terminal"
+	cp -rf "$MINIPANEL_SRC/src/deb/web-terminal/"* "$HESTIA/web-terminal/" 2>> $LOG
+	check_result $? "Failed to copy web-terminal backend"
+	# Install npm dependencies
+	echo -e "\n[ * ] Installing web terminal npm dependencies..."
+	(cd "$HESTIA/web-terminal" && npm install --production >> "$LOG" 2>&1)
+	warn_only $? "Failed to install web terminal npm dependencies"
+	# Install systemd service
+	if [ -f "$HESTIA/web-terminal/hestia-web-terminal.service" ]; then
+		cp -f "$HESTIA/web-terminal/hestia-web-terminal.service" /lib/systemd/system/hestia-web-terminal.service
+		systemctl daemon-reload
+	fi
+fi
+
 # Copy default data packages, templates, firewall, and api definitions into $HESTIA/data/
 if [ -d "$HESTIA/install/common/packages" ]; then
 	cp -rf "$HESTIA/install/common/packages" "$HESTIA/data/" 2>> $LOG

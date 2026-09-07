@@ -316,6 +316,8 @@ fi
 #----------------------------------------------------------#
 
 echo -e "\n[ * ] Removing remaining MiniPanel core files..."
+run rm -f /lib/systemd/system/hestia-web-terminal.service
+run systemctl daemon-reload 2>/dev/null || true
 run rm -rf "$HESTIA"
 run rm -rf /var/log/hestia
 run rm -f /etc/logrotate.d/hestia
