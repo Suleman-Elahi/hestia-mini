@@ -259,7 +259,7 @@ is_package_full() {
 	case "$1" in
 		MAIL_DOMAINS) used=$(wc -l $USER_DATA/mail.conf) ;;
 		MAIL_ACCOUNTS) used=$(wc -l $USER_DATA/mail/$domain.conf) ;;
-		DATABASES) used=$(wc -l $USER_DATA/db.conf) ;;
+		WEB_DOMAINS) used=$(wc -l $USER_DATA/domain.conf 2>/dev/null || echo "0") ;;
 	esac
 	used=$(echo "$used" | cut -f 1 -d \ )
 	limit=$(grep "^$1=" $USER_DATA/user.conf | cut -f 2 -d \')
@@ -394,6 +394,16 @@ is_object_valid() {
 
 		if [[ -z "$key" || ${#key} -lt 16 ]] || [[ ! -f "$HESTIA/data/access-keys/${key}" && ! -f "$HESTIA/data/access-keys/$key" ]]; then
 			check_result "$E_NOTEXIST" "$1 $3 doesn't exist"
+		fi
+	elif [ $2 = 'DOMAIN' ]; then
+		# Support domain lookups in domain.conf
+		if [ -f "$HESTIA/data/users/$user/domain.conf" ]; then
+			object=$(grep "DOMAIN='$3'" $HESTIA/data/users/$user/domain.conf)
+			if [ -z "$object" ]; then
+				check_result "$E_NOTEXIST" "domain $3 doesn't exist"
+			fi
+		else
+			check_result "$E_NOTEXIST" "domain $3 doesn't exist"
 		fi
 	else
 		object=$(grep "$2='$3'" $HESTIA/data/users/$user/$1.conf)
@@ -815,17 +825,6 @@ recalc_user_disk_usage() {
 		u_usage=$((u_usage + usage))
 	fi
 
-	if [ -f "$USER_DATA/db.conf" ]; then
-		usage=0
-		dusage=$(grep 'U_DISK=' $USER_DATA/db.conf \
-			| awk -F "U_DISK='" '{print $2}' | cut -f 1 -d \')
-		for disk_usage in $dusage; do
-			usage=$((usage + disk_usage))
-		done
-		d=$(grep "U_DISK_DB='" $USER_DATA/user.conf | cut -f 2 -d \')
-		sed -i "s/U_DISK_DB='$d'/U_DISK_DB='$usage'/g" $USER_DATA/user.conf
-		u_usage=$((u_usage + usage))
-	fi
 	usage=$(grep -m 1 'U_DISK_DIRS=' $USER_DATA/user.conf | cut -f 2 -d "'")
 	u_usage=$((u_usage + usage))
 	old=$(grep "U_DISK='" $USER_DATA/user.conf | cut -f 2 -d \')
@@ -1195,14 +1194,7 @@ is_cron_command_valid_format() {
 		check_result "$E_INVALID" "Invalid cron command format"
 	fi
 }
-# Database format validator
-is_database_format_valid() {
-	exclude="[!|@|#|$|^|&|*|(|)|+|=|{|}|:|,|<|>|?|/|\|\"|'|;|%|\`| ]"
-	if [[ "$1" =~ $exclude ]] || [ 64 -le ${#1} ]; then
-		check_result "$E_INVALID" "invalid $2 format :: $1"
-	fi
-	is_no_new_line_format "$1"
-}
+
 
 # Date format validator
 is_date_format_valid() {

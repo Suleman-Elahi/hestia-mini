@@ -307,8 +307,8 @@ function top_panel($user, $TAB) {
 	} else {
 		if ($panel[$user]["MAIL_DOMAINS"] != "0") {
 			$home_url = "/list/mail/";
-		} elseif ($panel[$user]["DATABASES"] != "0") {
-			$home_url = "/list/db/";
+		} else {
+			$home_url = "/list/domain/";
 		}
 	}
 
@@ -497,31 +497,6 @@ function list_timezones() {
 		#$timezone_list[$timezone] = "$timezone ${pretty_offset}";
 	}
 	return $timezone_list;
-}
-
-/**
- * A function that tells is it MySQL installed on the system, or it is MariaDB.
- *
- * Explanation:
- * $_SESSION['DB_SYSTEM'] has 'mysql' value even if MariaDB is installed, so you can't figure out is it really MySQL or it's MariaDB.
- * So, this function will make it clear.
- *
- * If MySQL is installed, function will return 'mysql' as a string.
- * If MariaDB is installed, function will return 'mariadb' as a string.
- *
- * Hint: if you want to check if PostgreSQL is installed - check value of $_SESSION['DB_SYSTEM']
- *
- * @return string
- */
-function is_it_mysql_or_mariadb() {
-	exec(HESTIA_CMD . "v-list-sys-services json", $output, $return_var);
-	$data = json_decode(implode("", $output), true);
-	unset($output);
-	$mysqltype = "mysql";
-	if (isset($data["mariadb"])) {
-		$mysqltype = "mariadb";
-	}
-	return $mysqltype;
 }
 
 function load_hestia_config() {

@@ -1,0 +1,103 @@
+#!/bin/bash
+# info: list domain
+# options: USER DOMAIN [FORMAT]
+#
+# example: v-list-domain admin example.com
+#
+# This function shows domain reverse proxy configuration details.
+
+#----------------------------------------------------------#
+#                Variables & Functions                     #
+#----------------------------------------------------------#
+
+# Argument definition
+user=$1
+domain=$2
+format=${3-shell}
+
+# Includes
+# shellcheck source=/etc/hestiacp/hestia.conf
+source /etc/hestiacp/hestia.conf
+# shellcheck source=/usr/local/hestia/func/main.sh
+source $HESTIA/func/main.sh
+# load config file
+source_conf "$HESTIA/conf/hestia.conf"
+
+# JSON list function
+json_list() {
+	local str=$(grep "DOMAIN='$domain'" "$USER_DATA/domain.conf" 2>/dev/null)
+	if [ -z "$str" ]; then
+		check_result "$E_NOTEXIST" "domain $domain doesn't exist"
+	fi
+	parse_object_kv_list "$str"
+	echo "{"
+	echo "    \"$domain\": {"
+	echo "        \"ALGORITHM\": \"$ALGORITHM\","
+	echo "        \"TARGETS\": \"$TARGETS\","
+	echo "        \"SSL\": \"$SSL\","
+	echo "        \"SUSPENDED\": \"$SUSPENDED\","
+	echo "        \"TIME\": \"$TIME\","
+	echo "        \"DATE\": \"$DATE\""
+	echo "    }"
+	echo "}"
+}
+
+# SHELL list function
+shell_list() {
+	local str=$(grep "DOMAIN='$domain'" "$USER_DATA/domain.conf" 2>/dev/null)
+	if [ -z "$str" ]; then
+		check_result "$E_NOTEXIST" "domain $domain doesn't exist"
+	fi
+	parse_object_kv_list "$str"
+	echo "DOMAIN     ALGORITHM     SSL     TARGETS"
+	echo "------     ---------     ---     -------"
+	echo -n "$DOMAIN $ALGORITHM $SSL "
+	echo "$TARGETS"
+}
+
+# PLAIN list function
+plain_list() {
+	local str=$(grep "DOMAIN='$domain'" "$USER_DATA/domain.conf" 2>/dev/null)
+	if [ -z "$str" ]; then
+		check_result "$E_NOTEXIST" "domain $domain doesn't exist"
+	fi
+	parse_object_kv_list "$str"
+	echo -e "$DOMAIN\t$ALGORITHM\t$TARGETS\t$SSL\t$SUSPENDED\t$TIME\t$DATE"
+}
+
+# CSV list function
+csv_list() {
+	local str=$(grep "DOMAIN='$domain'" "$USER_DATA/domain.conf" 2>/dev/null)
+	if [ -z "$str" ]; then
+		check_result "$E_NOTEXIST" "domain $domain doesn't exist"
+	fi
+	parse_object_kv_list "$str"
+	echo "DOMAIN,ALGORITHM,TARGETS,SSL,SUSPENDED,TIME,DATE"
+	echo "$DOMAIN,$ALGORITHM,\"$TARGETS\",$SSL,$SUSPENDED,$TIME,$DATE"
+}
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args '2' "$#" 'USER DOMAIN [FORMAT]'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+# Listing data
+case $format in
+	json) json_list ;;
+	plain) plain_list ;;
+	csv) csv_list ;;
+	shell) shell_list | column -t ;;
+esac
+
+#----------------------------------------------------------#
+#                       Hestia                             #
+#----------------------------------------------------------#
+
+exit

@@ -140,14 +140,14 @@ echo
 echo -e "${YELLOW}This will remove:${NC}"
 echo "  - The panel (hestia, hestia-nginx, hestia-php, hestia-web-terminal, /usr/local/hestia)"
 echo "  - Exim, Dovecot, ClamAV, SpamAssassin configuration"
-echo "  - phpMyAdmin, phpPgAdmin, and the File Manager"
+echo "  - The File Manager"
 echo "  - The reverse-proxy nginx config, sudoers rule, and cron jobs"
 echo "  - The 'hestiaweb' and 'hestiamail' system users"
 if [ "$KEEP_DATA" = 'yes' ]; then
-	echo -e "  - ${GREEN}Data will be KEPT${NC}: mail spools, database contents, user home dirs"
+	echo -e "  - ${GREEN}Data will be KEPT${NC}: mail spools, user home dirs"
 else
-	echo -e "  - ${RED}Mail spools, database contents (MySQL/MariaDB + PostgreSQL data), and${NC}"
-	echo -e "    ${RED}user home directories created for MiniPanel users WILL BE DELETED.${NC}"
+	echo -e "  - ${RED}Mail spools and user home directories created for MiniPanel users${NC}"
+	echo -e "    ${RED}WILL BE DELETED.${NC}"
 fi
 if [ "$KEEP_PACKAGES" = 'yes' ]; then
 	echo "  - Service packages (exim4, dovecot, mariadb-server, etc) will be LEFT INSTALLED."
@@ -172,45 +172,6 @@ if [ "$ASSUME_YES" != 'yes' ] && [ "$DRY_RUN" != 'yes' ]; then
 fi
 
 #----------------------------------------------------------#
-#              Remove MiniPanel-managed databases          #
-#----------------------------------------------------------#
-
-if [ "$KEEP_DATA" != 'yes' ]; then
-	echo -e "\n[ * ] Removing phpMyAdmin/phpPgAdmin control databases..."
-	mysql_cmd="mysql"
-	command -v mariadb > /dev/null 2>&1 && mysql_cmd="mariadb"
-	if command -v "$mysql_cmd" > /dev/null 2>&1; then
-		if [ "$DRY_RUN" = 'yes' ]; then
-			echo "  [dry-run] DROP DATABASE phpmyadmin; DROP USER 'pma'@'localhost';"
-		else
-			$mysql_cmd -uroot -e "DROP DATABASE IF EXISTS phpmyadmin;" >> "$LOG" 2>&1 || true
-			$mysql_cmd -uroot -e "DROP USER IF EXISTS 'pma'@'localhost';" >> "$LOG" 2>&1 || true
-		fi
-	fi
-
-	echo -e "\n[ * ] Removing all user-created MySQL/MariaDB and PostgreSQL databases and roles..."
-	echo -e "${YELLOW}      (this deletes ALL databases created through MiniPanel for every user)${NC}"
-	if [ -d "$HESTIA/bin" ] && [ -d "$HESTIA/data/users" ]; then
-		for user_dir in "$HESTIA"/data/users/*/; do
-			[ -d "$user_dir" ] || continue
-			mp_user="$(basename "$user_dir")"
-			if [ -f "$user_dir/db.conf" ]; then
-				while IFS= read -r line; do
-					dbname=$(echo "$line" | grep -oP "DB='[^']*'" | cut -d"'" -f2)
-					dbtype=$(echo "$line" | grep -oP "TYPE='[^']*'" | cut -d"'" -f2)
-					[ -z "$dbname" ] && continue
-					if [ "$DRY_RUN" = 'yes' ]; then
-						echo "  [dry-run] $HESTIA/bin/v-delete-database $mp_user $dbname"
-					else
-						"$HESTIA/bin/v-delete-database" "$mp_user" "$dbname" >> "$LOG" 2>&1 || true
-					fi
-				done < "$user_dir/db.conf"
-			fi
-		done
-	fi
-fi
-
-#----------------------------------------------------------#
 #                 Stop and disable services                 #
 #----------------------------------------------------------#
 
@@ -220,13 +181,6 @@ for svc in hestia hestia-web-terminal nginx exim4 dovecot clamav-daemon clamav-f
 	run systemctl disable "$svc" 2>/dev/null || true
 done
 
-# Only stop DB engines if we're about to remove their packages/data;
-# otherwise leave them running for whatever else might depend on them.
-if [ "$KEEP_DATA" != 'yes' ] && [ "$KEEP_PACKAGES" != 'yes' ]; then
-	run systemctl stop mysql 2>/dev/null || true
-	run systemctl stop mariadb 2>/dev/null || true
-	run systemctl stop postgresql 2>/dev/null || true
-fi
 killall -9 freshclam clamd 2>/dev/null || true
 
 #----------------------------------------------------------#
@@ -278,14 +232,6 @@ if [ -d "$HESTIA/data/users" ]; then
 fi
 
 #----------------------------------------------------------#
-#                Remove phpMyAdmin/phpPgAdmin                #
-#----------------------------------------------------------#
-
-echo -e "\n[ * ] Removing phpMyAdmin/phpPgAdmin files..."
-run rm -rf /usr/share/phpmyadmin /etc/phpmyadmin /var/lib/phpmyadmin
-run rm -rf /usr/share/phppgadmin /etc/phppgadmin
-
-#----------------------------------------------------------#
 #                    Remove File Manager                     #
 #----------------------------------------------------------#
 
@@ -318,16 +264,11 @@ run systemctl reload nginx 2> /dev/null
 
 if [ "$KEEP_PACKAGES" != 'yes' ]; then
 	echo -e "\n[ * ] Purging underlying service packages..."
-	echo -e "${YELLOW}      (mariadb-server/mysql-server/postgresql are only purged if --keep-data is not set)${NC}"
 
 	pkgs_always="hestia hestia-nginx hestia-php hestia-web-terminal nodejs clamav-daemon clamav-freshclam spamd spamassassin exim4 exim4-base exim4-config exim4-daemon-heavy bsd-mailx dovecot-imapd dovecot-managesieved dovecot-pop3d dovecot-sieve"
 
-	pkgs_with_data="mariadb-server mariadb-client mariadb-common mysql-server mysql-client mysql-common postgresql postgresql-contrib"
-
 	# Preseed debconf selections for unattended package purge
 	if command -v debconf-set-selections > /dev/null 2>&1; then
-		echo "mariadb-server mariadb-server/postrm_remove_databases boolean true" | debconf-set-selections 2>/dev/null || true
-		echo "mysql-server mysql-server/postrm_remove_databases boolean true" | debconf-set-selections 2>/dev/null || true
 		echo "exim4-base exim4/purge_spool boolean true" | debconf-set-selections 2>/dev/null || true
 		echo "clamav-base clamav-base/purge boolean true" | debconf-set-selections 2>/dev/null || true
 	fi
@@ -344,14 +285,6 @@ if [ "$KEEP_PACKAGES" != 'yes' ]; then
 	)
 
 	run_apt "Purging panel, web, and mail packages" apt-get "${apt_opts[@]}" purge $pkgs_always
-
-	if [ "$KEEP_DATA" != 'yes' ]; then
-		run_apt "Purging database packages" apt-get "${apt_opts[@]}" purge $pkgs_with_data
-		run rm -rf /var/lib/mysql /var/lib/postgresql
-	else
-		echo "  --keep-data set: leaving mariadb-server/mysql-server/postgresql packages"
-		echo "  and their data directories (/var/lib/mysql, /var/lib/postgresql) installed."
-	fi
 
 	run_apt "Removing unused dependencies (autoremove)" apt-get "${apt_opts[@]}" autoremove
 

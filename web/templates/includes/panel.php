@@ -321,27 +321,19 @@
 					<?php } ?>
 				<?php } ?>
 
-				<!-- Databases tab -->
-				<?php if (isset($_SESSION["DB_SYSTEM"]) && !empty($_SESSION["DB_SYSTEM"])) { ?>
-					<?php if ($panel[$user]["DATABASES"] != "0") { ?>
-						<li class="main-menu-item">
-							<a class="main-menu-item-link <?php if ($TAB == "DB") {
-       	echo "active";
-       } ?>" href="/list/db/" title="<?= _("Databases") ?>: <?= $panel[$user]["U_DATABASES"] ?>&#13;<?= _("Limit") ?>: <?= $panel[$user]["DATABASES"] == "unlimited"
-	? "∞"
-	: $panel[$user]["DATABASES"] ?>&#13;<?= _("Suspended") ?>: <?= $panel[$user]["SUSPENDED_DB"] ?>">
-								<p class="main-menu-item-label"><?= _("DB") ?><i class="fas fa-database"></i></p>
-								<ul class="main-menu-stats">
-									<li>
-										<?= _("Databases") ?>: <?= $panel[$user]["U_DATABASES"] ?> / <?= $panel[$user]["DATABASES"] == "unlimited" ? "<span class=\"u-text-bold\">∞</span>" : $panel[$user]["DATABASES"] ?> (<?= $panel[$user][
- 	"SUSPENDED_DB"
- ] ?>)
-									</li>
-								</ul>
-							</a>
-						</li>
-					<?php } ?>
-				<?php } ?>
+				<!-- Domains tab -->
+				<li class="main-menu-item">
+					<a class="main-menu-item-link <?php if ($TAB == "DOMAIN") {
+      	echo "active";
+      } ?>" href="/list/domain/" title="<?= _("Domains") ?>">
+							<p class="main-menu-item-label"><?= _("DOMAINS") ?><i class="fas fa-globe"></i></p>
+							<ul class="main-menu-stats">
+								<li>
+									<?= _("Reverse Proxies") ?>: <?= $panel[$user]["U_DOMAINS"] ?? "0" ?>
+								</li>
+							</ul>
+						</a>
+					</li>
 
 			</ul>
 		</div>

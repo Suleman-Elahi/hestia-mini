@@ -1,0 +1,116 @@
+#!/bin/bash
+# info: add domain reverse proxy
+# options: USER DOMAIN TARGETS [ALGORITHM] [SSL] [RESTART]
+#
+# example: v-add-domain admin example.com 127.0.0.1:8080
+# example: v-add-domain admin example.com "10.1.0.101:8080 10.1.0.102:8080" round_robin no yes
+#
+# This function adds a domain with Nginx reverse proxy configuration.
+
+#----------------------------------------------------------#
+#                Variables & Functions                     #
+#----------------------------------------------------------#
+
+# Argument definition
+user=$1
+domain=$2
+targets=$3
+algorithm=${4-round_robin}
+ssl=${5-no}
+restart=${6-yes}
+
+# Includes
+# shellcheck source=/etc/hestiacp/hestia.conf
+source /etc/hestiacp/hestia.conf
+# shellcheck source=/usr/local/hestia/func/main.sh
+source $HESTIA/func/main.sh
+# shellcheck source=/usr/local/hestia/func/domain_proxy.sh
+source $HESTIA/func/domain_proxy.sh
+# load config file
+source_conf "$HESTIA/conf/hestia.conf"
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args '3' "$#" 'USER DOMAIN TARGETS [ALGORITHM] [SSL] [RESTART]'
+is_format_valid 'user' 'domain'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+
+# Validate algorithm
+case "$algorithm" in
+	round_robin|least_conn|ip_hash|hash)
+		;;
+	*)
+		check_result "$E_INVALID" "invalid algorithm: $algorithm (must be round_robin, least_conn, ip_hash, or hash)"
+		;;
+esac
+
+# Validate SSL option
+case "$ssl" in
+	yes|no)
+		;;
+	*)
+		check_result "$E_INVALID" "invalid SSL option: $ssl (must be yes or no)"
+		;;
+esac
+
+# Check if domain already exists
+if [ -f "$USER_DATA/domain.conf" ] && grep -q "DOMAIN='$domain'" "$USER_DATA/domain.conf"; then
+	check_result "$E_EXISTS" "domain $domain already exists"
+fi
+
+# Verify target format (HOST:PORT or IP:PORT, optional weight/params)
+for target in $targets; do
+	if [[ ! "$target" =~ ^[a-zA-Z0-9.-]+:[0-9]+(\ +.*)?$ ]]; then
+		check_result "$E_INVALID" "invalid target format: $target (must be HOST:PORT or IP:PORT)"
+	fi
+done
+
+# Check package limits
+is_package_full 'WEB_DOMAINS' 2>/dev/null || true
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+# Source user config
+source_conf "$USER_DATA/user.conf"
+
+# Generate timestamp
+new_timestamp
+
+# Write domain configuration
+write_domain_config "$user" "$domain" "$algorithm" "$targets" "$ssl"
+
+# Update domain.conf
+conf="$USER_DATA/domain.conf"
+echo "DOMAIN='$domain' ALGORITHM='$algorithm' TARGETS='$targets' SSL='$ssl' SUSPENDED='no' TIME='$time' DATE='$date'" >> "$conf"
+chmod 660 "$conf"
+
+# Test nginx config
+test_nginx_config
+if [ $? -ne 0 ]; then
+	remove_domain_config "$user" "$domain"
+	sed -i "/DOMAIN='$domain'/d" "$conf"
+	check_result "$E_INVALID" "Nginx configuration test failed"
+fi
+
+# Reload nginx
+if [ "$restart" = 'yes' ]; then
+	reload_nginx
+fi
+
+#----------------------------------------------------------#
+#                       Hestia                             #
+#----------------------------------------------------------#
+
+# Increase domain counter
+increase_user_value "$user" '$U_DOMAINS'
+
+# Logging
+$BIN/v-log-action "$user" "Info" "Domain" "Added domain proxy ($domain)."
+log_event "$OK" "$ARGUMENTS"
+
+exit

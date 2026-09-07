@@ -4,7 +4,7 @@
 #
 # Hestia-Mini Installer
 # A stripped-down admin panel derived from HestiaCP
-# Supports: Mail, Database, File Management
+# Supports: Mail, Domain Management (Reverse Proxy/Load Balancing), File Management
 #
 # ======================================================== #
 
@@ -56,27 +56,20 @@ else
 fi
 HESTIA_INSTALL_BUILD="${HESTIA_BASE_VER}-1+${os_id}${HESTIA_CHANNEL}"
 
-# Supported PHP version (also used for phpMyAdmin/phpPgAdmin/panel PHP-FPM pool)
+# Supported PHP version (also used for panel PHP-FPM pool)
 fpm_v="8.2"
-# MariaDB version
-mariadb_v="11.8"
-# phpMyAdmin version to install
-pma_v="5.2.3"
-# phpPgAdmin version to install (Hestia-maintained fork, since upstream
-# phppgadmin releases predate PHP 8 support)
-pga_v="7.14.6"
 # File Manager (Filegator) version
 fm_v="7.15.1"
 
-# Defining software pack - minimal: mail + database (MySQL/MariaDB) + file manager
+# Defining software pack - minimal: mail + file manager (no database)
 software="acl apt-transport-https ca-certificates clamav-daemon cron curl dovecot-imapd
   dovecot-managesieved dovecot-pop3d dovecot-sieve exim4 exim4-daemon-heavy expect
   git hestia=${HESTIA_INSTALL_BUILD} hestia-nginx hestia-php hestia-web-terminal jq libmail-dkim-perl lsb-release
-  mariadb-client mariadb-common mariadb-server mc net-tools nodejs
+  mc net-tools nodejs
   nginx php${fpm_v} php${fpm_v}-apcu php${fpm_v}-bcmath php${fpm_v}-bz2 php${fpm_v}-cgi
   php${fpm_v}-cli php${fpm_v}-common php${fpm_v}-curl php${fpm_v}-gd php${fpm_v}-imagick
   php${fpm_v}-imap php${fpm_v}-intl php${fpm_v}-ldap php${fpm_v}-mbstring
-  php${fpm_v}-mysql php${fpm_v}-pspell php${fpm_v}-readline
+  php${fpm_v}-pspell php${fpm_v}-readline
   php${fpm_v}-xml php${fpm_v}-zip php${fpm_v}-fpm spamd unrar-free
   unzip util-linux vim-common whois zip zstd restic composer"
 
@@ -95,15 +88,9 @@ NC='\033[0m'
 # Non-interactive flags (can be overridden via env or CLI flags below)
 ASSUME_YES='no'
 PURGE_STUB_MTA='ask'
-PGSQL_ENABLE='no'
-PMA_INSTALL='yes'
-PGA_INSTALL='no'
 FM_INSTALL='yes'
 ADMIN_EMAIL=''
 ADMIN_PASSWORD=''
-PROXY_PORT='8080'
-PMA_BACKEND_PORT='8081'
-PGA_BACKEND_PORT='8082'
 PANEL_DOMAIN=''
 
 while [ $# -gt 0 ]; do
@@ -120,28 +107,6 @@ while [ $# -gt 0 ]; do
 			PURGE_STUB_MTA='no'
 			shift
 			;;
-		--postgresql | --pgsql)
-			PGSQL_ENABLE='yes'
-			PGA_INSTALL='yes'
-			shift
-			;;
-		--no-pgsql)
-			PGSQL_ENABLE='no'
-			PGA_INSTALL='no'
-			shift
-			;;
-		--no-pma)
-			PMA_INSTALL='no'
-			shift
-			;;
-		--pga)
-			PGA_INSTALL='yes'
-			shift
-			;;
-		--no-pga)
-			PGA_INSTALL='no'
-			shift
-			;;
 		--no-filemanager)
 			FM_INSTALL='no'
 			shift
@@ -154,10 +119,6 @@ while [ $# -gt 0 ]; do
 			ADMIN_PASSWORD="$2"
 			shift 2
 			;;
-		--proxy-port)
-			PROXY_PORT="$2"
-			shift 2
-			;;
 		--panel-domain)
 			PANEL_DOMAIN="$2"
 			shift 2
@@ -167,13 +128,9 @@ while [ $# -gt 0 ]; do
 			echo "  --yes, -y             Non-interactive: assume yes to all prompts"
 			echo "  --purge-mta           Automatically purge a conflicting stub MTA on port 25"
 			echo "  --no-purge-mta        Never purge, just warn"
-			echo "  --no-pgsql            Skip enabling PostgreSQL"
-			echo "  --no-pma              Skip installing phpMyAdmin"
-			echo "  --no-pga              Skip installing phpPgAdmin"
 			echo "  --no-filemanager      Skip installing the File Manager"
 			echo "  --admin-email EMAIL   Admin contact email (default: admin@<hostname>)"
 			echo "  --admin-password PASS Admin password (default: randomly generated)"
-			echo "  --proxy-port PORT     Reverse-proxy port for phpMyAdmin/phpPgAdmin (default: 8080)"
 			echo "  --panel-domain DOMAIN Panel domain for Let's Encrypt SSL (e.g. panel.example.com)"
 			exit 0
 			;;
@@ -483,27 +440,6 @@ else
 	echo "  Hestia-Mini panel will use port $port."
 fi
 
-# Port conflict check - reverse proxy port (phpMyAdmin/phpPgAdmin)
-if port_in_use "$PROXY_PORT"; then
-	echo -e "${YELLOW}Warning: Port $PROXY_PORT (DB web UI reverse proxy) is already in use.${NC}"
-	alt_port=$(find_free_port 8091 8092 8093 8094 8095)
-	if [ -z "$alt_port" ]; then
-		echo -e "${RED}Error: Could not find an available port for the DB web UI reverse proxy.${NC}"
-		exit 1
-	fi
-	echo "  Using port $alt_port for database web UIs instead."
-	PROXY_PORT="$alt_port"
-else
-	echo "  Database web UIs (reverse proxy) will use port $PROXY_PORT."
-fi
-
-# Port conflict check - phpMyAdmin/phpPgAdmin backend ports
-if port_in_use "$PMA_BACKEND_PORT" || port_in_use "$PGA_BACKEND_PORT"; then
-	echo -e "${YELLOW}Warning: Backend ports $PMA_BACKEND_PORT/$PGA_BACKEND_PORT are in use.${NC}"
-	echo "  These are internal-only (bound to 127.0.0.1) but must still be free."
-	exit 1
-fi
-
 # Check for existing MTA on port 25
 if port_in_use 25; then
 	echo -e "\n${YELLOW}Warning: Something is already listening on port 25.${NC}"
@@ -545,32 +481,6 @@ if port_in_use 25; then
 	else
 		echo "  Continuing without purging; mail delivery will not work until port 25 is freed."
 	fi
-fi
-
-# Check for existing MySQL/MariaDB
-if systemctl is-active --quiet mysql || systemctl is-active --quiet mariadb; then
-	echo -e "\n${YELLOW}Warning: MySQL/MariaDB is already running.${NC}"
-	if [ "$ASSUME_YES" != 'yes' ]; then
-		echo "  MiniPanel normally installs its own MariaDB instance."
-		read -r -p "  Reuse the existing instance instead of installing a new one? [y/N] " reply
-		if [[ "$reply" =~ ^[Yy]$ ]]; then
-			software=$(echo "$software" | sed -E 's/\bmariadb-server\b//')
-			echo "  Will reuse the existing database server; skipping mariadb-server install."
-		else
-			echo "  Proceeding to install MiniPanel's own MariaDB alongside the existing one."
-			echo "  NOTE: this may fail if the existing instance already holds port 3306."
-		fi
-	else
-		echo "  --yes specified: attempting to reuse the existing instance."
-		software=$(echo "$software" | sed -E 's/\bmariadb-server\b//')
-	fi
-fi
-
-# Check for existing PostgreSQL
-if systemctl is-active --quiet postgresql; then
-	echo -e "\n${YELLOW}Warning: PostgreSQL is already running.${NC}"
-	echo "  MiniPanel will reuse the existing instance rather than installing a second one."
-	software=$(echo "$software" | sed -E 's/\bpostgresql\b//; s/\bpostgresql-contrib\b//')
 fi
 
 #----------------------------------------------------------#
@@ -670,10 +580,6 @@ check_result $? "Failed to update package index after adding repositories."
 # Install Hestia-Mini software in background with animated spinner (matches original HestiaCP)
 echo -e "\n[ * ] Installing Hestia-Mini software packages..."
 echo "  NOTE: This process may take 5 to 15 minutes. Please wait..."
-
-if [ "$PGSQL_ENABLE" = 'yes' ]; then
-	software="$software postgresql postgresql-contrib php${fpm_v}-pgsql"
-fi
 
 apt-get -y install $software >> "$LOG" 2>&1 &
 BACK_PID=$!
@@ -837,16 +743,11 @@ MAIL_SYSTEM='exim'
 ANTIVIRUS_SYSTEM='clamav-daemon'
 ANTISPAM_SYSTEM='$([ "$release" -lt 12 ] && echo 'spamassassin' || echo 'spamd')'
 IMAP_SYSTEM='dovecot'
-DB_SYSTEM='mysql$([ "$PGSQL_ENABLE" = 'yes' ] && echo ',pgsql')'
-DB_PGSQL_SYSTEM='$([ "$PGSQL_ENABLE" = 'yes' ] && echo 'pgsql')'
-DB_PMA_ALIAS='phpmyadmin'
-DB_PGA_ALIAS='phppgadmin'
 FILE_MANAGER='$([ "$FM_INSTALL" = 'yes' ] && echo 'true' || echo 'false')'
 API='yes'
 LANGUAGE='en'
 THEME='default'
 BACKEND_PORT='$port'
-PROXY_PORT='$PROXY_PORT'
 ROOT_USER='admin'
 HOSTNAME='$(hostname -f 2> /dev/null || hostname)'
 HESTIA_VERSION='$MINIPANEL_VERSION'
@@ -928,28 +829,10 @@ else
 fi
 
 #----------------------------------------------------------#
-#               Configure Database Services                 #
+#            Configure PHP-FPM pool (panel + File Manager)   #
 #----------------------------------------------------------#
 
-echo -e "\n[ * ] Configuring MariaDB..."
-systemctl enable mysql 2>/dev/null || systemctl enable mariadb 2>/dev/null
-systemctl start mysql 2>/dev/null || systemctl start mariadb 2>/dev/null
-
-if [ "$PGSQL_ENABLE" = 'yes' ]; then
-	echo -e "\n[ * ] Configuring PostgreSQL..."
-	systemctl enable postgresql 2>/dev/null
-	systemctl start postgresql 2>/dev/null
-	check_result $? "Failed to start PostgreSQL"
-else
-	echo -e "\n[ * ] Skipping PostgreSQL (disabled via --no-pgsql)."
-fi
-
-#----------------------------------------------------------#
-#            Configure PHP-FPM pool (panel utilities:       #
-#            phpMyAdmin / phpPgAdmin / File Manager)        #
-#----------------------------------------------------------#
-
-echo -e "\n[ * ] Configuring PHP-FPM pool for phpMyAdmin/phpPgAdmin..."
+echo -e "\n[ * ] Configuring PHP-FPM pool..."
 mkdir -p /etc/php/${fpm_v}/fpm/pool.d
 if [ -f "$HESTIA_INSTALL_DIR/php-fpm/www.conf" ]; then
 	cp -f "$HESTIA_INSTALL_DIR/php-fpm/www.conf" /etc/php/${fpm_v}/fpm/pool.d/www.conf 2>> $LOG
@@ -973,69 +856,18 @@ systemctl restart php${fpm_v}-fpm 2>/dev/null
 check_result $? "Failed to start php${fpm_v}-fpm"
 
 #----------------------------------------------------------#
-#                 Configure phpMyAdmin                      #
-#----------------------------------------------------------#
-
-if [ -f "$SCRIPT_DIR/modules/configure-phpmyadmin.sh" ]; then
-	source "$SCRIPT_DIR/modules/configure-phpmyadmin.sh"
-	configure_phpmyadmin
-fi
-
-#----------------------------------------------------------#
-#                 Configure phpPgAdmin                      #
-#----------------------------------------------------------#
-
-if [ -f "$SCRIPT_DIR/modules/configure-phppgadmin.sh" ]; then
-	source "$SCRIPT_DIR/modules/configure-phppgadmin.sh"
-	configure_phppgadmin
-fi
-
-#----------------------------------------------------------#
 #                  Configure Nginx                          #
 #----------------------------------------------------------#
 
-echo -e "\n[ * ] Configuring Nginx (reverse proxy for DB web UIs)..."
+echo -e "\n[ * ] Configuring Nginx..."
 
+# Ensure domain config directory exists for reverse proxy configurations
+mkdir -p /etc/nginx/conf.d/domains
+
+# Create minimal nginx config (domains are added dynamically via v-add-domain)
 cat > /etc/nginx/conf.d/minipanel.conf << NGINX
-server {
-    listen $PROXY_PORT default_server;
-    server_name _;
-
-    location = / {
-        return 302 /phpmyadmin/;
-    }
-
-    location /phpmyadmin {
-        alias /usr/share/phpmyadmin/;
-        index index.php;
-
-        location ~ /(libraries|setup|templates|locale) {
-            deny all;
-            return 404;
-        }
-
-        location ~ ^/phpmyadmin/(.*\.php)\$ {
-            alias /usr/share/phpmyadmin/\$1;
-            include fastcgi_params;
-            fastcgi_index index.php;
-            fastcgi_param SCRIPT_FILENAME \$request_filename;
-            fastcgi_pass unix:/run/php/www.sock;
-        }
-    }
-
-    location /phppgadmin {
-        alias /usr/share/phppgadmin/;
-        index index.php;
-
-        location ~ ^/phppgadmin/(.*\.php)\$ {
-            alias /usr/share/phppgadmin/\$1;
-            include fastcgi_params;
-            fastcgi_index index.php;
-            fastcgi_param SCRIPT_FILENAME \$request_filename;
-            fastcgi_pass unix:/run/php/www.sock;
-        }
-    }
-}
+# Hestia-Mini domain configurations are managed via v-add-domain
+# and placed in /etc/nginx/conf.d/domains/*.conf
 NGINX
 
 nginx -t >> $LOG 2>&1
@@ -1275,15 +1107,9 @@ fi
 echo -e "  Username:   admin"
 echo -e "  Password:   $adminpass"
 echo -e "\n"
-echo -e "  Database web UIs (reverse-proxied on port $PROXY_PORT):"
-echo -e "    - phpMyAdmin:  http://$(hostname):$PROXY_PORT/phpmyadmin/"
-if [ "$PGSQL_ENABLE" = 'yes' ] && [ "$PGA_INSTALL" = 'yes' ]; then
-	echo -e "    - phpPgAdmin:  http://$(hostname):$PROXY_PORT/phppgadmin/"
-fi
-echo -e "\n"
 echo -e "  Features enabled:"
 echo -e "    - Mail (Exim + Dovecot + ClamAV + SpamAssassin)"
-echo -e "    - Database (MySQL/MariaDB$([ "$PGSQL_ENABLE" = 'yes' ] && echo ' + PostgreSQL') + phpMyAdmin$([ "$PGA_INSTALL" = 'yes' ] && [ "$PGSQL_ENABLE" = 'yes' ] && echo ' + phpPgAdmin'))"
+echo -e "    - Domain Management (Nginx reverse proxy + load balancing)"
 if [ "$FM_INSTALL" = 'yes' ]; then
 	echo -e "    - File Manager"
 fi
