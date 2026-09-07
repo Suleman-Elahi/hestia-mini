@@ -7,7 +7,7 @@ use PHPMailer\PHPMailer\Exception;
 use function Hestiacp\quoteshellarg\quoteshellarg;
 
 try {
-	require_once "vendor/autoload.php";
+	require_once __DIR__ . "/vendor/autoload.php";
 } catch (Throwable $ex) {
 	$errstr =
 		"Unable to load required libraries. Please run v-add-sys-dependencies in command line. Error: " .

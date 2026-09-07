@@ -1259,6 +1259,14 @@ else
 fi
 
 #----------------------------------------------------------#
+#             Configure PHP Dependencies                   #
+#----------------------------------------------------------#
+
+echo -e "\n[ * ] Configuring PHP dependencies (Composer)..."
+$HESTIA/bin/v-add-sys-dependencies quiet >> $LOG 2>&1
+check_result $? "Failed to install Hestia PHP dependencies - check $LOG"
+
+#----------------------------------------------------------#
 #                  Enable Services                          #
 #----------------------------------------------------------#
 

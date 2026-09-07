@@ -16,7 +16,7 @@ source $HESTIA/func/main.sh
 # load config file
 source_conf "$HESTIA/conf/hestia.conf"
 # upgrade config file
-source "$HESTIA/install/upgrade/upgrade.conf"
+[[ -f "$HESTIA/install/upgrade/upgrade.conf" ]] && source "$HESTIA/install/upgrade/upgrade.conf"
 
 MODE=$1
 user="$ROOT_USER"
@@ -45,12 +45,21 @@ if [ -z "$HOMEDIR" ] || [ -z "$HESTIA_INSTALL_DIR" ]; then
 	exit 2
 fi
 
+# Ensure user directory structure exists
+mkdir -p "$HOMEDIR/$user/.config/composer" "$HOMEDIR/$user/.cache" "$HOMEDIR/$user/.composer"
+chown -R $user: "$HOMEDIR/$user/.config" "$HOMEDIR/$user/.cache" "$HOMEDIR/$user/.composer"
+
 # Ensure that Composer is installed for the user before continuing as it is a dependency of the PHPMailer.
 if [ ! -f "$COMPOSER_BIN" ]; then
-	$BIN/v-add-user-composer "$user"
-	if [ $? -ne 0 ]; then
-		$BIN/v-add-user-notification "$ROOT_USER" 'Composer installation failed!' '<p class="u-text-bold">Hestia will not work without Composer.</p><p>Please try running the installer manually from a shell session:<br><code>v-add-sys-dependencies</code></p><p>If this continues, <a href="https://github.com/hestiacp/hestiacp/issues" target="_blank">open an issue on GitHub</a>.</p>'
-		exit 1
+	if command -v composer > /dev/null 2>&1; then
+		ln -sf "$(command -v composer)" "$COMPOSER_BIN"
+		chown -h $user: "$COMPOSER_BIN"
+	else
+		$BIN/v-add-user-composer "$user"
+		if [ $? -ne 0 ]; then
+			$BIN/v-add-user-notification "$ROOT_USER" 'Composer installation failed!' '<p class="u-text-bold">Hestia will not work without Composer.</p><p>Please try running the installer manually from a shell session:<br><code>v-add-sys-dependencies</code></p><p>If this continues, <a href="https://github.com/hestiacp/hestiacp/issues" target="_blank">open an issue on GitHub</a>.</p>'
+			exit 1
+		fi
 	fi
 fi
 
@@ -66,7 +75,7 @@ rm --recursive --force ${PM_INSTALL_DIR}/vendor
 mkdir -p ${PM_INSTALL_DIR}/vendor
 chown $user: -R ${PM_INSTALL_DIR}/vendor
 
-openssl_installed=$(/usr/local/hestia/php/bin/php -m | grep openssl)
+openssl_installed=$(/usr/local/hestia/php/bin/php -m 2>/dev/null | grep openssl)
 if [ -z "$openssl_installed" ]; then
 	COMPOSER_HOME="$HOMEDIR/$user/.config/composer" user_exec /usr/bin/php $COMPOSER_BIN --quiet --no-dev install
 else
@@ -86,32 +95,34 @@ if [ $? -ne 0 ]; then
 	exit 1
 fi
 
-cd "$QUICK_INSTALL_DIR"
-rm --recursive --force ${QUICK_INSTALL_DIR}/vendor
-mkdir -p ${QUICK_INSTALL_DIR}/vendor
-chown $user: -R ${QUICK_INSTALL_DIR}/vendor
-
-if [ -z "$openssl_installed" ]; then
-	COMPOSER_HOME="$HOMEDIR/$user/.config/composer" user_exec /usr/bin/php $COMPOSER_BIN --quiet --no-dev install
-else
-	COMPOSER_HOME="$HOMEDIR/$user/.config/composer" user_exec $HESTIA_PHP $COMPOSER_BIN --quiet --no-dev install
-fi
-
-# Check if installation was successful, if not abort script and throw error message notification and clean-up
-if [ $? -ne 0 ]; then
-	echo "ERROR: Quick install dependencies installation failed!"
-	echo "Please report this to our development team:"
-	echo "https://github.com/hestiacp/hestiacp/issues"
-	$BIN/v-add-user-notification "$ROOT_USER" 'Hestia Quick Install dependencies installation failed!' '<p>Please <a href="https://github.com/hestiacp/hestiacp/issues" target="_blank">open an issue on GitHub</a> to report this to our development team.</p>'
-	# Installation failed, clean up files
-	rm --recursive --force ${QUICK_INSTALL_DIR}/vendor
-	$BIN/v-log-action "system" "Error" "Plugins" "Quick Install dependencies installation failed"
-	exit 1
-fi
-
-# Set permissions
 chown root: -R "${PM_INSTALL_DIR}/vendor"
-chown root: -R "${QUICK_INSTALL_DIR}/vendor"
+
+if [ -f "$QUICK_INSTALL_DIR/composer.json" ]; then
+	cd "$QUICK_INSTALL_DIR"
+	rm --recursive --force ${QUICK_INSTALL_DIR}/vendor
+	mkdir -p ${QUICK_INSTALL_DIR}/vendor
+	chown $user: -R ${QUICK_INSTALL_DIR}/vendor
+
+	if [ -z "$openssl_installed" ]; then
+		COMPOSER_HOME="$HOMEDIR/$user/.config/composer" user_exec /usr/bin/php $COMPOSER_BIN --quiet --no-dev install
+	else
+		COMPOSER_HOME="$HOMEDIR/$user/.config/composer" user_exec $HESTIA_PHP $COMPOSER_BIN --quiet --no-dev install
+	fi
+
+	# Check if installation was successful, if not abort script and throw error message notification and clean-up
+	if [ $? -ne 0 ]; then
+		echo "ERROR: Quick install dependencies installation failed!"
+		echo "Please report this to our development team:"
+		echo "https://github.com/hestiacp/hestiacp/issues"
+		$BIN/v-add-user-notification "$ROOT_USER" 'Hestia Quick Install dependencies installation failed!' '<p>Please <a href="https://github.com/hestiacp/hestiacp/issues" target="_blank">open an issue on GitHub</a> to report this to our development team.</p>'
+		# Installation failed, clean up files
+		rm --recursive --force ${QUICK_INSTALL_DIR}/vendor
+		$BIN/v-log-action "system" "Error" "Plugins" "Quick Install dependencies installation failed"
+		exit 1
+	fi
+
+	chown root: -R "${QUICK_INSTALL_DIR}/vendor"
+fi
 
 #----------------------------------------------------------#
 #                       Logging                            #
