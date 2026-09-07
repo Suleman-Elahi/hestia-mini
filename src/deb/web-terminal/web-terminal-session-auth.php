@@ -44,6 +44,18 @@ if (!is_string($look)) {
 	$look = "";
 }
 
+if (($_SESSION["WEB_TERMINAL"] ?? "false") !== "true") {
+	deny("web terminal is disabled");
+}
+
+if (
+	($_SESSION["userContext"] ?? "") === "admin" &&
+	$look === "admin" &&
+	($_SESSION["POLICY_SYSTEM_PROTECTED_ADMIN"] ?? "no") === "yes"
+) {
+	deny("protected administrator impersonation is not allowed");
+}
+
 echo json_encode(
 	["ok" => true, "user" => $user, "look" => $look],
 	JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,

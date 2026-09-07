@@ -61,18 +61,14 @@ const wss = new WebSocketServer({
 		}
 
 		const origin = info.origin || info.req.headers.origin;
-		let matches = origin === `https://${hostname}:${config.BACKEND_PORT}`;
+		const panelHosts = new Set([hostname, config.HOSTNAME, ...Object.keys(systemIPs)]);
+		const allowedOrigins = new Set(
+			[...panelHosts]
+				.filter((host) => typeof host === 'string' && host.length > 0)
+				.map((host) => `https://${host}:${config.BACKEND_PORT}`),
+		);
 
-		if (!matches) {
-			for (const ip of Object.keys(systemIPs)) {
-				if (origin === `https://${ip}:${config.BACKEND_PORT}`) {
-					matches = true;
-					break;
-				}
-			}
-		}
-
-		if (matches) {
+		if (allowedOrigins.has(origin)) {
 			cb(true);
 			return;
 		}

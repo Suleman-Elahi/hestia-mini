@@ -1044,6 +1044,10 @@ if [ -e "$HESTIA/data/users/admin" ]; then
 else
 	$HESTIA/bin/v-add-user admin "$adminpass" "$ADMIN_EMAIL" default Admin >> $LOG 2>&1
 	check_result $? "Failed to create admin user - check $LOG"
+	# The default package intentionally uses nologin for tenant accounts. The
+	# initial panel administrator needs an interactive shell for Web Terminal.
+	$HESTIA/bin/v-change-user-shell admin bash >> $LOG 2>&1
+	check_result $? "Failed to grant the admin user an interactive shell - check $LOG"
 	$HESTIA/bin/v-change-user-role admin admin >> $LOG 2>&1
 	warn_only $? "Failed to grant admin role - run manually: v-change-user-role admin admin"
 fi
