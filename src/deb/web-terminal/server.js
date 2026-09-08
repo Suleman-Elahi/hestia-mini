@@ -150,7 +150,25 @@ wss.on('connection', (ws, req) => {
 
 	// Send/receive data from websocket/pty
 	pty.on('data', (data) => ws.send(data));
-	ws.on('message', (data) => pty.write(data));
+	ws.on('message', (data) => {
+		const message = data.toString();
+		try {
+			const resize = JSON.parse(message);
+			if (
+				resize?.type === 'resize' &&
+				Number.isInteger(resize.cols) &&
+				Number.isInteger(resize.rows) &&
+				resize.cols >= 20 && resize.cols <= 500 &&
+				resize.rows >= 5 && resize.rows <= 200
+			) {
+				pty.resize(resize.cols, resize.rows);
+				return;
+			}
+		} catch {
+			// Terminal input is normally not JSON; forward it unchanged.
+		}
+		pty.write(data);
+	});
 
 	// Ensure pty is killed when websocket is closed and vice versa
 	pty.on('exit', () => {

@@ -16,7 +16,21 @@ export default async function initWebTerminal() {
 	terminal.open(container);
 
 	const socket = new WebSocket(`wss://${window.location.host}/_shell/`);
+	const resizeTerminal = () => {
+		// Xterm's fixed-width cells are approximately 9x18 pixels with the
+		// default font. Keep the browser grid and server PTY in sync so editors
+		// such as Nano wrap pasted text at the visible terminal width.
+		const cols = Math.max(20, Math.floor(container.clientWidth / 9));
+		const rows = Math.max(5, Math.floor(container.clientHeight / 18));
+		terminal.resize(cols, rows);
+		if (socket.readyState === WebSocket.OPEN) {
+			socket.send(JSON.stringify({ type: 'resize', cols, rows }));
+		}
+	};
+	new ResizeObserver(resizeTerminal).observe(container);
+
 	socket.addEventListener('open', (_) => {
+		resizeTerminal();
 		terminal.onData((data) => socket.send(data));
 		socket.addEventListener('message', (evt) => terminal.write(evt.data));
 	});
