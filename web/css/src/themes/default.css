@@ -1382,7 +1382,15 @@
 
 /* Web Terminal
    ========================================================================== */
+.terminal-page {
+	width: 100%;
+	min-height: calc(100vh - 100px);
+	display: flex;
+}
+
 .web-terminal {
+	flex: 1;
+	min-width: 0;
 	padding: 10px;
 	background-color: #000;
 }
