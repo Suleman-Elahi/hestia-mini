@@ -1,0 +1,16 @@
+#!/bin/bash
+# info: create or update a Cloudflare A record for a domain
+# options: DOMAIN
+
+source /etc/hestiacp/hestia.conf
+source $HESTIA/func/main.sh
+source_conf "$HESTIA/conf/hestia.conf"
+source "$HESTIA/func/cloudflare.sh"
+
+domain="$1"
+check_args '1' "$#" 'DOMAIN'
+is_format_valid 'domain'
+cf_token_available || check_result "$E_NOTEXIST" "Cloudflare DNS provider is not configured"
+ip="$(cf_public_ip)" || check_result "$E_INVALID" "Configured server public IP is unavailable"
+cf_ensure_a_record "$domain" "$ip" || check_result "$E_INVALID" "Cloudflare DNS record could not be synchronized"
+exit

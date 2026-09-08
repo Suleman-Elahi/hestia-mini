@@ -1,0 +1,19 @@
+#!/bin/bash
+# info: list configured DNS providers without credentials
+# options: [FORMAT]
+
+format="${1-json}"
+source /etc/hestiacp/hestia.conf
+source $HESTIA/func/main.sh
+source_conf "$HESTIA/conf/hestia.conf"
+source "$HESTIA/func/cloudflare.sh"
+
+case "$format" in
+	json)
+		if cf_token_available; then printf '{"cloudflare":{"NAME":"Cloudflare"}}\n'; else printf '{}\n'; fi
+		;;
+	list)
+		cf_token_available && printf 'cloudflare\tCloudflare\n'
+		;;
+	*) check_result "$E_INVALID" "invalid format" ;;
+esac

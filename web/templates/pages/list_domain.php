@@ -15,6 +15,11 @@
 				<a href="/add/domain/" class="button button-secondary js-button-create">
 					<i class="fas fa-circle-plus icon-green"></i><?= tohtml( _("Add Domain")) ?>
 				</a>
+				<?php if (($_SESSION["userContext"] ?? "") === "admin") { ?>
+					<button type="button" class="button button-secondary" onclick="document.getElementById('cloudflare-provider-dialog').showModal()">
+						<i class="fas fa-cloud icon-orange"></i><?= tohtml(_("Add DNS Provider")) ?>
+					</button>
+				<?php } ?>
 			<?php } ?>
 		</div>
 		<div class="toolbar-right">
@@ -62,6 +67,22 @@
 	</div>
 </div>
 <!-- End toolbar -->
+
+<?php if (($_SESSION["userContext"] ?? "") === "admin" && $read_only !== "true") { ?>
+<dialog id="cloudflare-provider-dialog">
+	<form action="/add/dns-provider/" method="post">
+		<input type="hidden" name="token" value="<?= tohtml($_SESSION["token"]) ?>">
+		<h2><?= tohtml(_("Add DNS Provider")) ?></h2>
+		<div class="u-mb20">
+			<label for="cloudflare_token" class="form-label"><?= tohtml(_("Cloudflare API Token")) ?></label>
+			<input type="password" class="form-control" name="cloudflare_token" id="cloudflare_token" autocomplete="new-password" required>
+			<span class="form-check u-mt5 u-text-small u-text-secondary"><?= tohtml(_("Cloudflare verifies this token before saving it.")) ?></span>
+		</div>
+		<button type="submit" class="button"><?= tohtml(_("Save Cloudflare")) ?></button>
+		<button type="button" class="button button-secondary" onclick="this.closest('dialog').close()"><?= tohtml(_("Cancel")) ?></button>
+	</form>
+</dialog>
+<?php } ?>
 
 <div class="container">
 

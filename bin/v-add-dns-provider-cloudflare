@@ -1,0 +1,26 @@
+#!/bin/bash
+# info: add Cloudflare DNS provider token from standard input
+# options:
+
+source /etc/hestiacp/hestia.conf
+source $HESTIA/func/main.sh
+source_conf "$HESTIA/conf/hestia.conf"
+source "$HESTIA/func/cloudflare.sh"
+
+[ "$(id -u)" -eq 0 ] || check_result "$E_FORBIDDEN" "permission denied"
+token="$(cat)"
+token="${token%$'\n'}"
+[ -n "$token" ] && [ "${#token}" -le 4096 ] && [[ "$token" != *$'\n'* ]] || check_result "$E_INVALID" "Cloudflare token is invalid"
+
+tmp="$(mktemp)" || check_result "$E_SYSTEM" "Unable to store Cloudflare token"
+printf '%s' "$token" > "$tmp"
+chmod 600 "$tmp"
+if ! cf_verify_token "$tmp"; then
+	rm -f "$tmp"
+	check_result "$E_INVALID" "Cloudflare token verification failed"
+fi
+install -d -m 700 "$CF_PROVIDER_DIR"
+install -m 600 "$tmp" "$CF_TOKEN_FILE"
+rm -f "$tmp"
+$BIN/v-log-action "$(source_conf "$HESTIA/conf/hestia.conf"; echo "$ROOT_USER")" "Info" "DNS" "Cloudflare DNS provider token updated."
+exit

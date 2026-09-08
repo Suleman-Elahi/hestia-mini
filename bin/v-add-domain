@@ -1,6 +1,6 @@
 #!/bin/bash
 # info: add domain reverse proxy
-# options: USER DOMAIN TARGETS [ALGORITHM] [SSL] [RESTART]
+# options: USER DOMAIN TARGETS [ALGORITHM] [SSL] [RESTART] [DNS_PROVIDER]
 #
 # example: v-add-domain admin example.com 127.0.0.1:8080
 # example: v-add-domain admin example.com "10.1.0.101:8080 10.1.0.102:8080" round_robin no yes
@@ -18,6 +18,7 @@ targets=$3
 algorithm=${4-round_robin}
 ssl=${5-no}
 restart=${6-yes}
+dns_provider=${7-manual}
 
 # Includes
 # shellcheck source=/etc/hestiacp/hestia.conf
@@ -26,6 +27,9 @@ source /etc/hestiacp/hestia.conf
 source $HESTIA/func/main.sh
 # shellcheck source=/usr/local/hestia/func/domain_proxy.sh
 source $HESTIA/func/domain_proxy.sh
+if [ "$dns_provider" = "cloudflare" ]; then
+	source "$HESTIA/func/cloudflare.sh"
+fi
 # load config file
 source_conf "$HESTIA/conf/hestia.conf"
 
@@ -33,7 +37,7 @@ source_conf "$HESTIA/conf/hestia.conf"
 #                    Verifications                         #
 #----------------------------------------------------------#
 
-check_args '3' "$#" 'USER DOMAIN TARGETS [ALGORITHM] [SSL] [RESTART]'
+check_args '3' "$#" 'USER DOMAIN TARGETS [ALGORITHM] [SSL] [RESTART] [DNS_PROVIDER]'
 is_format_valid 'user' 'domain'
 is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
@@ -53,6 +57,18 @@ case "$ssl" in
 		;;
 	*)
 		check_result "$E_INVALID" "invalid SSL option: $ssl (must be yes or no)"
+		;;
+esac
+
+# Validate DNS provider
+case "$dns_provider" in
+	manual)
+		;;
+	cloudflare)
+		cf_token_available || check_result "$E_NOTEXIST" "Cloudflare DNS provider is not configured"
+		;;
+	*)
+		check_result "$E_INVALID" "invalid DNS provider"
 		;;
 esac
 
@@ -99,8 +115,23 @@ fi
 
 # Reload nginx
 if [ "$restart" = 'yes' ]; then
-	reload_nginx
-	check_result $? "Nginx reload failed"
+	if ! reload_nginx; then
+		remove_domain_config "$user" "$domain"
+		sed -i "/DOMAIN='$domain'/d" "$conf"
+		reload_nginx >/dev/null 2>&1 || true
+		check_result "$E_SYSTEM" "Nginx reload failed"
+	fi
+fi
+
+# Synchronize Cloudflare only after the new local proxy domain is live. On an
+# external DNS failure remove exactly the domain created by this invocation.
+if [ "$dns_provider" = "cloudflare" ]; then
+	if ! $BIN/v-ensure-cloudflare-domain-a-record "$domain" >/dev/null 2>&1; then
+		remove_domain_config "$user" "$domain"
+		sed -i "/DOMAIN='$domain'/d" "$conf"
+		[ "$restart" = 'yes' ] && reload_nginx >/dev/null 2>&1 || true
+		check_result "$E_INVALID" "Cloudflare DNS record could not be synchronized; local domain was removed"
+	fi
 fi
 
 #----------------------------------------------------------#

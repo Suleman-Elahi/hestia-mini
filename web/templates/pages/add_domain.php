@@ -70,6 +70,16 @@
 					</select>
 				</div>
 				<div class="u-mb20">
+					<label for="v_dns_provider" class="form-label"><?= tohtml( _("DNS Provider")) ?></label>
+					<select class="form-select" name="v_dns_provider" id="v_dns_provider">
+						<option value="manual" <?php if ($v_dns_provider == 'manual') echo 'selected'; ?>><?= tohtml( _("Manual")) ?></option>
+						<option value="cloudflare" <?php if ($v_dns_provider == 'cloudflare') echo 'selected'; ?> <?php if (empty($dns_providers['cloudflare'])) echo 'disabled'; ?>><?= tohtml( _("Cloudflare")) ?></option>
+					</select>
+					<?php if (empty($dns_providers['cloudflare'])) { ?>
+						<span class="form-check u-mt5 u-text-small u-text-secondary"><?= tohtml( _("An administrator must add a Cloudflare API token before it can be selected.")) ?></span>
+					<?php } ?>
+				</div>
+				<div class="u-mb20">
 					<label for="v_ssl" class="form-label"><?= tohtml( _("Enable SSL")) ?></label>
 					<select class="form-select" name="v_ssl" id="v_ssl">
 						<option value="no" <?php if ($v_ssl == 'no') echo 'selected'; ?>><?= tohtml( _("No")) ?></option>

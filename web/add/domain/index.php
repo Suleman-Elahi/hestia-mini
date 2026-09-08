@@ -7,6 +7,14 @@ $TAB = "DOMAIN";
 // Main include
 include $_SERVER["DOCUMENT_ROOT"] . "/inc/main.php";
 
+// List configured DNS providers. This JSON includes display metadata only, never credentials.
+exec(HESTIA_CMD . "v-list-dns-providers json", $provider_output, $provider_return);
+$dns_providers = $provider_return === 0 ? json_decode(implode("", $provider_output), true) : [];
+if (!is_array($dns_providers)) {
+	$dns_providers = [];
+}
+unset($provider_output, $provider_return);
+
 // Check POST request for domain
 if (!empty($_POST["ok"])) {
 	// Check token
@@ -43,6 +51,21 @@ if (!empty($_POST["ok"])) {
 	$v_ssl = !empty($_POST["v_ssl"]) ? $_POST["v_ssl"] : "no";
 	$v_ssl_arg = quoteshellarg($v_ssl);
 
+	// Get DNS provider; only configured providers are accepted.
+	$v_dns_provider = $_POST["v_dns_provider"] ?? "manual";
+	if (!is_string($v_dns_provider)) {
+		$v_dns_provider = "manual";
+	}
+	if ($v_dns_provider === "cloudflare" && empty($dns_providers["cloudflare"])) {
+		$_SESSION["error_msg"] = _("Cloudflare DNS provider is not configured.");
+		$v_dns_provider = "manual";
+	}
+	if (!in_array($v_dns_provider, ["manual", "cloudflare"], true)) {
+		$_SESSION["error_msg"] = _("Invalid DNS provider.");
+		$v_dns_provider = "manual";
+	}
+	$v_dns_provider_arg = quoteshellarg($v_dns_provider);
+
 	// Process backend targets (one per line)
 	$v_targets_raw = trim($_POST["v_targets"]);
 	$targets = array_filter(array_map('trim', explode("\n", $v_targets_raw)));
@@ -68,7 +91,8 @@ if (!empty($_POST["ok"])) {
 				$v_algorithm_arg .
 				" " .
 				$v_ssl_arg .
-				" yes",
+				" yes " .
+				$v_dns_provider_arg,
 			$output,
 			$return_var,
 		);
@@ -103,6 +127,9 @@ if (empty($v_algorithm)) {
 }
 if (empty($v_ssl)) {
 	$v_ssl = "no";
+}
+if (empty($v_dns_provider)) {
+	$v_dns_provider = "manual";
 }
 
 $accept = $_GET["accept"] ?? "";
