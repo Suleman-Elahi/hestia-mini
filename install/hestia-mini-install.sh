@@ -87,7 +87,7 @@ software="acl apt-transport-https ca-certificates clamav-daemon cron curl doveco
   php${fpm_v}-cli php${fpm_v}-common php${fpm_v}-curl php${fpm_v}-gd php${fpm_v}-imagick
   php${fpm_v}-imap php${fpm_v}-intl php${fpm_v}-ldap php${fpm_v}-mbstring
   php${fpm_v}-pspell php${fpm_v}-readline
-  php${fpm_v}-xml php${fpm_v}-zip php${fpm_v}-fpm spamd unrar-free
+  php${fpm_v}-xml php${fpm_v}-zip php${fpm_v}-sqlite3 php${fpm_v}-fpm sqlite3 spamd unrar-free
   unzip util-linux vim-common whois zip zstd restic composer"
 
 installer_dependencies="apt-transport-https ca-certificates curl dirmngr gnupg openssl software-properties-common wget sudo"
@@ -827,13 +827,12 @@ MAIL_SYSTEM='exim'
 ANTIVIRUS_SYSTEM='clamav-daemon'
 ANTISPAM_SYSTEM='$([ "$os" = 'debian' ] && [ "$release" -lt 12 ] && echo 'spamassassin' || echo 'spamd')'
 IMAP_SYSTEM='dovecot'
-# Nginx can serve optional, administrator-provisioned webmail clients.
-# WEBMAIL_SYSTEM intentionally stays unset: Mini never installs a client.
+# Roundcube webmail (SQLite backend)
 WEB_SYSTEM='nginx'
 WEB_PORT='80'
 WEB_SSL_PORT='443'
 WEBMAIL_ALIAS='webmail'
-WEBMAIL_SYSTEM=''
+WEBMAIL_SYSTEM='roundcube'
 FILE_MANAGER='$([ "$FM_INSTALL" = 'yes' ] && echo 'true' || echo 'false')'
 API='yes'
 LANGUAGE='en'
@@ -1095,6 +1094,16 @@ if [ "$FM_INSTALL" = 'yes' ]; then
 else
 	echo -e "\n[ * ] Skipping File Manager install (disabled via --no-filemanager)."
 fi
+
+#----------------------------------------------------------#
+#                Install Roundcube Webmail                 #
+#----------------------------------------------------------#
+
+echo -e "\n[ * ] Installing Roundcube Webmail (SQLite)..."
+export HOMEDIR='/home'
+export HESTIA_COMMON_DIR="$HESTIA/install/common"
+$HESTIA/bin/v-add-sys-roundcube >> $LOG 2>&1
+warn_only $? "Roundcube installation failed - re-run manually with: /usr/local/hestia/bin/v-add-sys-roundcube"
 
 #----------------------------------------------------------#
 #             Configure PHP Dependencies                   #

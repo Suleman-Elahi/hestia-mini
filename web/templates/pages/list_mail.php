@@ -239,19 +239,17 @@
 									</a>
 								</li>
 								<?php if ($_SESSION["WEBMAIL_SYSTEM"]) { ?>
-									<?php if (!empty($data[$key]["WEBMAIL"])) { ?>
-											<li class="units-table-row-action" data-key-action="href">
-												<a
-													class="units-table-row-action-link"
-													href="https://<?= tohtml($webmail) ?>.<?= tohtml($key) ?>/"
-													target="_blank"
-													title="<?= tohtml( _("Open Webmail")) ?>"
-												>
-												<i class="fas fa-paper-plane icon-lightblue"></i>
-												<span class="u-hide-desktop"><?= tohtml( _("Open Webmail")) ?></span>
-											</a>
-										</li>
-									<?php } ?>
+									<li class="units-table-row-action" data-key-action="href">
+										<a
+											class="units-table-row-action-link"
+											href="<?= !empty($data[$key]["WEBMAIL"]) ? "https://" . tohtml($webmail) . "." . tohtml($key) . "/" : "/webmail/" ?>"
+											target="_blank"
+											title="<?= tohtml( _("Open Webmail")) ?>"
+										>
+											<i class="fas fa-paper-plane icon-lightblue"></i>
+											<span class="u-hide-desktop"><?= tohtml( _("Open Webmail")) ?></span>
+										</a>
+									</li>
 								<?php } ?>
 								<li class="units-table-row-action shortcut-enter" data-key-action="href">
 									<a

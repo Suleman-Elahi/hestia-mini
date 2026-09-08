@@ -56,11 +56,6 @@ if [[ -z "$HOMEDIR" ]] || [[ -z "$HESTIA_COMMON_DIR" ]]; then
 	exit 2
 fi
 
-if ! grep -qw 'mysql' <<< "$DB_SYSTEM"; then
-	echo "ERROR: Mysql not available. Installation aborted"
-	exit 2
-fi
-
 if [[ -d "/usr/share/roundcube" ]]; then
 	echo "ERROR: Install done from apt source, unable to continue"
 	exit 2
@@ -240,6 +235,17 @@ if [[ "$UPDATE" == "no" ]]; then
 			psql_query "USE $database; $(< "$RC_INSTALL_DIR/SQL/postgres.initial.sql")" \
 				|| fail "Failed to import PostgreSQL schema into '$database'"
 		fi
+	else
+		# SQLite setup (for database-free hestia-mini)
+		mkdir -p "$RC_INSTALL_DIR/db"
+		sqlite_db="$RC_INSTALL_DIR/db/roundcube.db"
+		if [ -f "$RC_INSTALL_DIR/SQL/sqlite.initial.sql" ]; then
+			sqlite3 "$sqlite_db" < "$RC_INSTALL_DIR/SQL/sqlite.initial.sql" 2>/dev/null || fail "Failed to initialize SQLite database for Roundcube"
+		fi
+		chown -R hestiamail:www-data "$RC_INSTALL_DIR/db"
+		chmod 770 "$RC_INSTALL_DIR/db"
+		chmod 660 "$sqlite_db" 2>/dev/null || true
+		sed -i "s|mysql://roundcube:%password%@localhost/roundcube|sqlite:////$sqlite_db?mode=0646|g" "$RC_CONFIG_DIR/config.inc.php"
 	fi
 
 	# TODO: Add support for PostgreSQL
@@ -361,6 +367,26 @@ done
 if [ "$webmail_routes_added" = 'yes' ]; then
 	[ -n "$WEB_SYSTEM" ] && "$BIN/v-restart-web" 'yes'
 	[ -n "$PROXY_SYSTEM" ] && "$BIN/v-restart-proxy" 'yes'
+fi
+
+# Configure panel Nginx /webmail/ location route
+nginx_conf="/usr/local/hestia/nginx/conf/nginx.conf"
+if [ -f "$nginx_conf" ] && ! grep -q "location /webmail/" "$nginx_conf"; then
+	sed -i '/location \/fm\//i \
+	location /webmail/ {\
+		alias /var/lib/roundcube/;\
+		index index.php;\
+		location ~ ^/webmail/(.+\\.php)$ {\
+			alias /var/lib/roundcube/$1;\
+			include fastcgi_params;\
+			fastcgi_param HTTP_EARLY_DATA $rfc_early_data if_not_empty;\
+			fastcgi_param SCRIPT_FILENAME /var/lib/roundcube/$1;\
+			fastcgi_pass unix:/run/hestia-php.sock;\
+			fastcgi_index index.php;\
+		}\
+	}\
+' "$nginx_conf"
+	systemctl restart hestia-nginx 2>/dev/null || true
 fi
 
 #----------------------------------------------------------#
