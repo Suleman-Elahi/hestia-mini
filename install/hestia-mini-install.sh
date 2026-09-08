@@ -959,6 +959,7 @@ mkdir -p /etc/nginx/conf.d/domains
 cat > /etc/nginx/conf.d/minipanel.conf << NGINX
 # Hestia-Mini domain configurations are managed via v-add-domain
 # and placed in /etc/nginx/conf.d/domains/*.conf
+include /etc/nginx/conf.d/domains/*.conf;
 NGINX
 
 nginx -t >> $LOG 2>&1
