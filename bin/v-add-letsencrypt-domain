@@ -1,9 +1,10 @@
 #!/bin/bash
 # info: check letsencrypt domain
-# options: USER DOMAIN [ALIASES] [MAIL]
+# options: USER DOMAIN [ALIASES] [MAIL] [PROXY]
 #
 # example: v-add-letsencrypt-domain admin wonderland.com www.wonderland.com,demo.wonderland.com
 # example: v-add-letsencrypt-domain admin wonderland.com '' yes
+# example: v-add-letsencrypt-domain admin proxy.example.com www.proxy.example.com '' proxy
 #
 # This function check and validates domain with Let's Encrypt
 
@@ -16,6 +17,7 @@ user=$1
 domain=$2
 aliases=$3
 mail=${4// /}
+proxy=${5// /}
 
 # Define variables to preserve redirect/force-ssl if renewal fails
 deleted_redirect=0
@@ -26,6 +28,10 @@ deleted_force_ssl=0
 source /etc/hestiacp/hestia.conf
 # shellcheck source=/usr/local/hestia/func/main.sh
 source $HESTIA/func/main.sh
+if [ "$proxy" = 'proxy' ]; then
+	# Mini proxy domains have their own flat-file model and Nginx generator.
+	source $HESTIA/func/domain_proxy.sh
+fi
 # shellcheck source=/usr/local/hestia/func/domain.sh
 source $HESTIA/func/domain.sh
 # shellcheck source=/usr/local/hestia/func/ip.sh
@@ -84,11 +90,22 @@ cleanup_mail_acme_vhost() {
 	fi
 }
 
+cleanup_proxy_acme_vhost() {
+	if [ "$proxy" = 'proxy' ]; then
+		rm -f "$HOMEDIR/$user/conf/web/$domain.acme.conf"
+		if [ -n "$PROXY_ALGORITHM" ] && [ -n "$PROXY_TARGETS" ]; then
+			write_domain_config "$user" "$domain" "$PROXY_ALGORITHM" "$PROXY_TARGETS" "$PROXY_SSL"
+			reload_nginx > /dev/null 2>&1 || true
+		fi
+	fi
+}
+
 # Function to preserve redirect/force-ssl and remove temporary ACME routing on
 # certificate renewal failure
 on_error_exit() {
 	local exit_code=$?
 	cleanup_mail_acme_vhost
+	cleanup_proxy_acme_vhost
 	if [[ $exit_code -eq 0 ]]; then
 		return
 	fi
@@ -110,7 +127,7 @@ trap on_error_exit EXIT
 #                    Verifications                         #
 #----------------------------------------------------------#
 
-check_args '2' "$#" 'USER DOMAIN [ALIASES] [MAIL]'
+check_args '2' "$#" 'USER DOMAIN [ALIASES] [MAIL] [PROXY]'
 is_format_valid 'user' 'domain' 'aliases'
 is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
@@ -126,18 +143,35 @@ fi
 
 if [ -z "$mail" ] || [ "$mail" = 'no' ]; then
 	mail=''
-	is_system_enabled "$WEB_SYSTEM" 'WEB_SYSTEM'
-	is_object_valid 'web' 'DOMAIN' "$domain"
-	is_object_unsuspended 'web' 'DOMAIN' "$domain"
-	get_domain_values 'web'
-	# check if alias is the letsencrypt wildcard domain, if not, make the normal checks
-	if [[ "$aliases" != "*.$domain" ]]; then
-		for alias in $(echo "$aliases" | tr ',' '\n' | sort -u); do
-			check_alias="$(echo $ALIAS | tr ',' '\n' | grep ^$alias$)"
-			if [ -z "$check_alias" ]; then
-				check_result "$E_NOTEXIST" "domain alias $alias doesn't exist"
-			fi
-		done
+	if [ "$proxy" = 'proxy' ]; then
+		proxy_record=$(grep -m1 -F "DOMAIN='$domain'" "$USER_DATA/domain.conf" 2>/dev/null)
+		if [ -z "$proxy_record" ]; then
+			check_result "$E_NOTEXIST" "proxy domain $domain doesn't exist"
+		fi
+		parse_object_kv_list "$proxy_record"
+		PROXY_ALGORITHM="$ALGORITHM"
+		PROXY_TARGETS="$TARGETS"
+		PROXY_SSL="$SSL"
+		if [ "$SUSPENDED" = 'yes' ]; then
+			check_result "$E_SUSPENDED" "proxy domain $domain is suspended"
+		fi
+		if [ "$PROXY_SSL" != 'yes' ]; then
+			check_result "$E_NOTEXIST" "SSL is not enabled for proxy domain $domain"
+		fi
+	else
+		is_system_enabled "$WEB_SYSTEM" 'WEB_SYSTEM'
+		is_object_valid 'web' 'DOMAIN' "$domain"
+		is_object_unsuspended 'web' 'DOMAIN' "$domain"
+		get_domain_values 'web'
+		# check if alias is the letsencrypt wildcard domain, if not, make the normal checks
+		if [[ "$aliases" != "*.$domain" ]]; then
+			for alias in $(echo "$aliases" | tr ',' '\n' | sort -u); do
+				check_alias="$(echo $ALIAS | tr ',' '\n' | grep ^$alias$)"
+				if [ -z "$check_alias" ]; then
+					check_result "$E_NOTEXIST" "domain alias $alias doesn't exist"
+				fi
+			done
+		fi
 	fi
 else
 	is_system_enabled "$MAIL_SYSTEM" 'MAIL_SYSTEM'
@@ -166,19 +200,21 @@ if [ -n "$mail" ]; then
 		aliases="$WEBMAIL_ALIAS.$root_domain"
 	fi
 else
-	parse_object_kv_list $(grep "DOMAIN='$domain'" $USER_DATA/web.conf)
+	if [ "$proxy" != 'proxy' ]; then
+		parse_object_kv_list $(grep "DOMAIN='$domain'" $USER_DATA/web.conf)
 
-	domain_redirect="$REDIRECT"
-	if [[ -n "$domain_redirect" ]]; then
-		domain_redirect_code="$REDIRECT_CODE"
-		$BIN/v-delete-web-domain-redirect $user $domain
-		deleted_redirect=1
-	fi
+		domain_redirect="$REDIRECT"
+		if [[ -n "$domain_redirect" ]]; then
+			domain_redirect_code="$REDIRECT_CODE"
+			$BIN/v-delete-web-domain-redirect $user $domain
+			deleted_redirect=1
+		fi
 
-	domain_forcessl="$SSL_FORCE"
-	if [[ "$domain_forcessl" == 'yes' ]]; then
-		$BIN/v-delete-web-domain-ssl-force $user $domain
-		deleted_force_ssl=1
+		domain_forcessl="$SSL_FORCE"
+		if [[ "$domain_forcessl" == 'yes' ]]; then
+			$BIN/v-delete-web-domain-ssl-force $user $domain
+			deleted_force_ssl=1
+		fi
 	fi
 fi
 
@@ -373,7 +409,20 @@ for auth in $authz; do
 		check_result $? "DNS _acme-challenge record wasn't created ($domain)"
 	else
 		if [ -z "$mail" ]; then
-			if [ "$WEB_SYSTEM" = 'nginx' ] || [ "$PROXY_SYSTEM" = 'nginx' ]; then
+			if [ "$proxy" = 'proxy' ]; then
+				conf="$HOMEDIR/$user/conf/web/$domain.acme.conf"
+				cat > "$conf" << EOF
+location ~ "^/\\.well-known/acme-challenge/(.*)$" {
+    default_type text/plain;
+    return 200 "\$1.$THUMB";
+}
+EOF
+				write_domain_config "$user" "$domain" "$PROXY_ALGORITHM" "$PROXY_TARGETS" "$PROXY_SSL"
+				test_nginx_config
+				check_result $? "Proxy configuration test failed while enabling Let's Encrypt validation" > /dev/null
+				reload_nginx
+				check_result $? "Proxy reload failed while enabling Let's Encrypt validation" > /dev/null
+			elif [ "$WEB_SYSTEM" = 'nginx' ] || [ "$PROXY_SYSTEM" = 'nginx' ]; then
 				conf="$HOMEDIR/$user/conf/web/$domain/nginx.conf_letsencrypt"
 				sconf="$HOMEDIR/$user/conf/web/$domain/nginx.ssl.conf_letsencrypt"
 				echo 'location ~ "^/\.well-known/acme-challenge/(.*)$" {' \
@@ -630,12 +679,30 @@ fi
 
 # Adding SSL
 if [ -z "$mail" ]; then
-	ssl_home="$(get_object_value 'web' 'DOMAIN' "$domain" '$SSL_HOME')"
-	ssl_enabled="$(get_object_value 'web' 'DOMAIN' "$domain" '$SSL')"
-	if [ "$ssl_enabled" = "yes" ]; then
-		$BIN/v-update-web-domain-ssl "$user" "$domain" "$ssl_dir" "updatessl"
+	if [ "$proxy" = 'proxy' ]; then
+		mkdir -p "$USER_DATA/ssl"
+		# Nginx consumes the full chain from .crt; retain the split files too for
+		# Hestia tooling and predictable cleanup.
+		cp -f "$ssl_dir/$domain.pem" "$USER_DATA/ssl/$domain.crt"
+		cp -f "$ssl_dir/$domain.key" "$USER_DATA/ssl/$domain.key"
+		cp -f "$ssl_dir/$domain.pem" "$USER_DATA/ssl/$domain.pem"
+		cp -f "$ssl_dir/$domain.ca" "$USER_DATA/ssl/$domain.ca"
+		chmod 660 "$USER_DATA/ssl/$domain.crt" "$USER_DATA/ssl/$domain.key" \
+			"$USER_DATA/ssl/$domain.pem" "$USER_DATA/ssl/$domain.ca"
+		rm -f "$HOMEDIR/$user/conf/web/$domain.acme.conf"
+		write_domain_config "$user" "$domain" "$PROXY_ALGORITHM" "$PROXY_TARGETS" 'yes'
+		test_nginx_config
+		check_result $? "Proxy configuration test failed while installing Let's Encrypt certificate" > /dev/null
+		reload_nginx
+		check_result $? "Proxy reload failed while installing Let's Encrypt certificate" > /dev/null
 	else
-		$BIN/v-add-web-domain-ssl "$user" "$domain" "$ssl_dir" "$ssl_home" "updatessl"
+		ssl_home="$(get_object_value 'web' 'DOMAIN' "$domain" '$SSL_HOME')"
+		ssl_enabled="$(get_object_value 'web' 'DOMAIN' "$domain" '$SSL')"
+		if [ "$ssl_enabled" = "yes" ]; then
+			$BIN/v-update-web-domain-ssl "$user" "$domain" "$ssl_dir" "updatessl"
+		else
+			$BIN/v-add-web-domain-ssl "$user" "$domain" "$ssl_dir" "$ssl_home" "updatessl"
+		fi
 	fi
 else
 	# TODO replace with v-update-mail-domain-ssl if ssl is enabled
@@ -664,20 +731,29 @@ fi
 
 # Updating letsencrypt key
 if [ -z "$mail" ]; then
-	if [ -z "$LETSENCRYPT" ]; then
-		add_object_key "web" 'DOMAIN' "$domain" 'LETSENCRYPT' 'FTP_USER'
-		add_object_key "web" 'DOMAIN' "$domain" 'LETSENCRYPT_FAIL_COUNT' 'LETSENCRYPT'
-	fi
-	update_object_value 'web' 'DOMAIN' "$domain" '$LETSENCRYPT' 'yes'
-	update_object_value 'web' 'DOMAIN' "$domain" '$LETSENCRYPT_FAIL_COUNT' "0"
+	if [ "$proxy" = 'proxy' ]; then
+		if [ -z "$LETSENCRYPT" ]; then
+			add_object_key "domain" 'DOMAIN' "$domain" 'LETSENCRYPT' 'SSL'
+			add_object_key "domain" 'DOMAIN' "$domain" 'LETSENCRYPT_FAIL_COUNT' 'LETSENCRYPT'
+		fi
+		update_object_value 'domain' 'DOMAIN' "$domain" '$LETSENCRYPT' 'yes'
+		update_object_value 'domain' 'DOMAIN' "$domain" '$LETSENCRYPT_FAIL_COUNT' '0'
+	else
+		if [ -z "$LETSENCRYPT" ]; then
+			add_object_key "web" 'DOMAIN' "$domain" 'LETSENCRYPT' 'FTP_USER'
+			add_object_key "web" 'DOMAIN' "$domain" 'LETSENCRYPT_FAIL_COUNT' 'LETSENCRYPT'
+		fi
+		update_object_value 'web' 'DOMAIN' "$domain" '$LETSENCRYPT' 'yes'
+		update_object_value 'web' 'DOMAIN' "$domain" '$LETSENCRYPT_FAIL_COUNT' "0"
 
-	if [[ "$domain_forcessl" == 'yes' ]]; then
-		$BIN/v-add-web-domain-ssl-force $user $domain
-		deleted_force_ssl=0
-	fi
-	if [[ -n "$domain_redirect" ]]; then
-		$BIN/v-add-web-domain-redirect $user $domain $domain_redirect $domain_redirect_code
-		deleted_redirect=0
+		if [[ "$domain_forcessl" == 'yes' ]]; then
+			$BIN/v-add-web-domain-ssl-force $user $domain
+			deleted_force_ssl=0
+		fi
+		if [[ -n "$domain_redirect" ]]; then
+			$BIN/v-add-web-domain-redirect $user $domain $domain_redirect $domain_redirect_code
+			deleted_redirect=0
+		fi
 	fi
 
 else

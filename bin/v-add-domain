@@ -100,6 +100,7 @@ fi
 # Reload nginx
 if [ "$restart" = 'yes' ]; then
 	reload_nginx
+	check_result $? "Nginx reload failed"
 fi
 
 #----------------------------------------------------------#
@@ -108,6 +109,26 @@ fi
 
 # Increase domain counter
 increase_user_value "$user" '$U_DOMAINS'
+
+# SSL=yes initially renders HTTP-only until a certificate is installed. Issue
+# synchronously only after that HTTP configuration is live for HTTP-01.
+if [ "$ssl" = 'yes' ]; then
+	$BIN/v-add-letsencrypt-domain "$user" "$domain" '' '' proxy
+	issue_status=$?
+	if [ "$issue_status" -ne 0 ]; then
+		# Keep the newly created proxy usable over HTTP and make a later SSL
+		# selection retryable instead of leaving an unrenewable SSL=yes state.
+		sed -i "/DOMAIN='$domain'/d" "$conf"
+		new_timestamp
+		echo "DOMAIN='$domain' ALGORITHM='$algorithm' TARGETS='$targets' SSL='no' SUSPENDED='no' TIME='$time' DATE='$date'" >> "$conf"
+		write_domain_config "$user" "$domain" "$algorithm" "$targets" 'no'
+		test_nginx_config
+		check_result $? "Nginx configuration test failed while rolling back SSL"
+		reload_nginx
+		check_result $? "Nginx reload failed while rolling back SSL"
+		check_result "$issue_status" "Let's Encrypt SSL certificate installation failed"
+	fi
+fi
 
 # Logging
 $BIN/v-log-action "$user" "Info" "Domain" "Added domain proxy ($domain)."

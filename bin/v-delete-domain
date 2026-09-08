@@ -41,7 +41,15 @@ fi
 #----------------------------------------------------------#
 
 # Remove Nginx configuration
+record=$(grep -m1 -F "DOMAIN='$domain'" "$USER_DATA/domain.conf")
+parse_object_kv_list "$record"
 remove_domain_config "$user" "$domain"
+
+# Remove managed certificate material.
+if [ "$LETSENCRYPT" = 'yes' ]; then
+	rm -f "$USER_DATA/ssl/$domain.crt" "$USER_DATA/ssl/$domain.key" \
+		"$USER_DATA/ssl/$domain.pem" "$USER_DATA/ssl/$domain.ca"
+fi
 
 # Remove from domain.conf
 conf="$USER_DATA/domain.conf"

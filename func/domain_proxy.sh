@@ -46,13 +46,14 @@ generate_upstream_block() {
 }
 
 # Generate Nginx server block for a domain
-# Usage: generate_server_block <domain> <algorithm> <ssl_enabled> <ssl_cert_path> <ssl_key_path>
+# Usage: generate_server_block <user> <domain> <algorithm> <ssl_enabled> <ssl_cert_path> <ssl_key_path>
 generate_server_block() {
-	local domain="$1"
-	local algorithm="$2"
-	local ssl_enabled="$3"
-	local ssl_cert_path="${4:-}"
-	local ssl_key_path="${5:-}"
+	local user="$1"
+	local domain="$2"
+	local algorithm="$3"
+	local ssl_enabled="$4"
+	local ssl_cert_path="${5:-}"
+	local ssl_key_path="${6:-}"
 	local upstream_name="$(echo "${domain}_backend" | tr '.-' '__')"
 
 	local has_valid_ssl="no"
@@ -79,14 +80,24 @@ generate_server_block() {
 		echo "    ssl_session_timeout 1d;"
 		echo "    ssl_session_tickets off;"
 		echo ""
+	fi
 
-		echo "    if (\$scheme != \"https\") {"
-		echo "        return 301 https://\$host\$request_uri;"
-		echo "    }"
+	# The temporary include is created only while HTTP-01 validation is in
+	# progress. It must be before the catch-all proxy location so challenges
+	# are never sent to an upstream (including during certificate renewal).
+	local acme_conf="$HOMEDIR/$user/conf/web/$domain.acme.conf"
+	if [ -f "$acme_conf" ]; then
+		echo "    include $acme_conf;"
 		echo ""
 	fi
 
 	echo "    location / {"
+	if [ "$has_valid_ssl" = "yes" ]; then
+		echo "        if (\$scheme != \"https\") {"
+		echo "            return 301 https://\$host\$request_uri;"
+		echo "        }"
+		echo ""
+	fi
 	echo "        proxy_pass http://${upstream_name};"
 	echo "        proxy_set_header Host \$host;"
 	echo "        proxy_set_header X-Real-IP \$remote_addr;"
@@ -129,10 +140,10 @@ write_domain_config() {
 		echo ""
 		if [ "$ssl_enabled" = "yes" ]; then
 			local cert_dir="$USER_DATA/ssl"
-			generate_server_block "$domain" "$algorithm" "yes" \
+			generate_server_block "$user" "$domain" "$algorithm" "yes" \
 				"$cert_dir/$domain.crt" "$cert_dir/$domain.key"
 		else
-			generate_server_block "$domain" "$algorithm" "no"
+			generate_server_block "$user" "$domain" "$algorithm" "no"
 		fi
 	} > "$nginx_conf"
 
@@ -157,6 +168,7 @@ remove_domain_config() {
 	rm -f "/etc/nginx/conf.d/domain_${domain}.conf"
 	rm -f "/etc/nginx/conf.d/domains/${domain}.conf"
 	rm -f "$HOMEDIR/$user/conf/web/$domain.conf"
+	rm -f "$HOMEDIR/$user/conf/web/$domain.acme.conf"
 }
 
 # Test Nginx configuration

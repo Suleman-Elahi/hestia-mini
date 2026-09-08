@@ -117,6 +117,47 @@ for user in $("$BIN/v-list-users" list); do
 		fi
 	done
 
+	# Mini proxy domains are stored in domain.conf rather than web.conf, so
+	# discover their managed certificates explicitly.
+	if [ -f "$USER_DATA/domain.conf" ]; then
+		while IFS= read -r proxy_record; do
+			[ -z "$proxy_record" ] && continue
+			parse_object_kv_list "$proxy_record"
+			[ "$LETSENCRYPT" = 'yes' ] || continue
+			[ "$SSL" = 'yes' ] || continue
+			[ "$SUSPENDED" = 'yes' ] && continue
+			[ "${LETSENCRYPT_FAIL_COUNT:-0}" -gt "$max_LE_failures" ] && continue
+
+			domain="$DOMAIN"
+			fail_counter="${LETSENCRYPT_FAIL_COUNT:-0}"
+			if [ ! -s "$USER_DATA/ssl/$domain.crt" ]; then
+				days_valid=0
+			else
+				crt_data=$(openssl x509 -text -in "$USER_DATA/ssl/$domain.crt" 2>/dev/null)
+				not_after=$(echo "$crt_data" | grep "Not After" | cut -f 2,3,4 -d :)
+				expiration=$(date -d "$not_after" +%s 2>/dev/null)
+				now=$(date +%s)
+				days_valid=$(((expiration - now) / 86400))
+			fi
+			if [ "$days_valid" -lt "$days_valid_setting" ]; then
+				if [ "$lecounter" -gt 0 ]; then
+					sleep 10
+				fi
+				((lecounter++))
+				msg=$("$BIN/v-add-letsencrypt-domain" "$user" "$domain" '' '' proxy)
+				if [ $? -ne 0 ]; then
+					echo "$msg"
+					log_event "$E_INVALID" "$domain $msg"
+					$BIN/v-log-action "$user" "Error" "Domain" "Let's Encrypt SSL certificate update failed (Proxy domain: $domain)."
+					((fail_counter++))
+					update_object_value 'domain' 'DOMAIN' "$domain" '$LETSENCRYPT_FAIL_COUNT' "$fail_counter"
+				else
+					$BIN/v-log-action "$user" "Info" "Domain" "Let's Encrypt SSL certificate renewed (Proxy domain: $domain)."
+				fi
+			fi
+		done < "$USER_DATA/domain.conf"
+	fi
+
 	for domain in $(search_objects 'mail' 'LETSENCRYPT' 'yes' 'DOMAIN'); do
 
 		domain_suspended="$(get_object_value 'mail' 'DOMAIN' "$domain" '$SUSPENDED')"

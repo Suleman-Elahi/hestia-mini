@@ -64,9 +64,13 @@ for target in $targets; do
 	fi
 done
 
-#----------------------------------------------------------#
-#                       Action                             #
-#----------------------------------------------------------#
+# Preserve managed certificate state on edits. Disabling SSL explicitly removes
+# only certificates which this proxy domain is known to manage.
+old_record=$(grep -m1 -F "DOMAIN='$domain'" "$USER_DATA/domain.conf")
+parse_object_kv_list "$old_record"
+old_letsencrypt="$LETSENCRYPT"
+old_fail_count="$LETSENCRYPT_FAIL_COUNT"
+old_ssl="$SSL"
 
 # Remove old configuration
 remove_domain_config "$user" "$domain"
@@ -78,7 +82,15 @@ write_domain_config "$user" "$domain" "$algorithm" "$targets" "$ssl"
 conf="$USER_DATA/domain.conf"
 sed -i "/DOMAIN='$domain'/d" "$conf"
 new_timestamp
-echo "DOMAIN='$domain' ALGORITHM='$algorithm' TARGETS='$targets' SSL='$ssl' SUSPENDED='no' TIME='$time' DATE='$date'" >> "$conf"
+metadata=''
+if [ "$ssl" = 'yes' ] && [ "$old_letsencrypt" = 'yes' ]; then
+	metadata=" LETSENCRYPT='yes' LETSENCRYPT_FAIL_COUNT='${old_fail_count:-0}'"
+fi
+if [ "$ssl" = 'no' ] && [ "$old_letsencrypt" = 'yes' ]; then
+	rm -f "$USER_DATA/ssl/$domain.crt" "$USER_DATA/ssl/$domain.key" \
+		"$USER_DATA/ssl/$domain.pem" "$USER_DATA/ssl/$domain.ca"
+fi
+echo "DOMAIN='$domain' ALGORITHM='$algorithm' TARGETS='$targets' SSL='$ssl' SUSPENDED='no' TIME='$time' DATE='$date'$metadata" >> "$conf"
 chmod 660 "$conf"
 
 # Test nginx config
@@ -90,6 +102,26 @@ fi
 # Reload nginx
 if [ "$restart" = 'yes' ]; then
 	reload_nginx
+	check_result $? "Nginx reload failed"
+fi
+
+# Issue when SSL is newly enabled. Existing managed certificates are preserved
+# on backend/algorithm edits and renewed by v-update-letsencrypt-ssl.
+if [ "$ssl" = 'yes' ] && [ "$old_ssl" != 'yes' ]; then
+	$BIN/v-add-letsencrypt-domain "$user" "$domain" '' '' proxy
+	issue_status=$?
+	if [ "$issue_status" -ne 0 ]; then
+		# Revert only the SSL state; the requested backend changes stay applied.
+		sed -i "/DOMAIN='$domain'/d" "$conf"
+		new_timestamp
+		echo "DOMAIN='$domain' ALGORITHM='$algorithm' TARGETS='$targets' SSL='$old_ssl' SUSPENDED='no' TIME='$time' DATE='$date'" >> "$conf"
+		write_domain_config "$user" "$domain" "$algorithm" "$targets" "$old_ssl"
+		test_nginx_config
+		check_result $? "Nginx configuration test failed while rolling back SSL"
+		reload_nginx
+		check_result $? "Nginx reload failed while rolling back SSL"
+		check_result "$issue_status" "Let's Encrypt SSL certificate installation failed"
+	fi
 fi
 
 #----------------------------------------------------------#
