@@ -90,7 +90,7 @@ software="acl apt-transport-https ca-certificates clamav-daemon cron curl doveco
   php${fpm_v}-xml php${fpm_v}-zip php${fpm_v}-sqlite3 php${fpm_v}-fpm sqlite3 spamd unrar-free
   unzip util-linux vim-common whois zip zstd restic composer"
 
-installer_dependencies="apt-transport-https ca-certificates curl dirmngr gnupg openssl software-properties-common wget sudo"
+installer_dependencies="apt-transport-https ca-certificates curl dirmngr gnupg openssl wget sudo"
 
 #----------------------------------------------------------#
 #                  Variables & Functions                     #
@@ -615,6 +615,9 @@ case "$os" in
 			22.04 | 24.04)
 				# Ubuntu uses the Ondřej PHP PPA; packages.sury.org is Debian-only
 				# for these releases. Noble needs this temporary weak-key workaround.
+				# software-properties-common (provides add-apt-repository) no longer
+				# exists on Debian 13, so install it here on Ubuntu only.
+				apt-get -y install software-properties-common >> "$LOG" 2>&1
 				if [ "$release" = '24.04' ]; then
 					echo 'APT::Key::Assert-Pubkey-Algo "";' > /etc/apt/apt.conf.d/99weakkey-warning
 				fi
