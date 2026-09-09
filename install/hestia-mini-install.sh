@@ -79,7 +79,7 @@ fpm_v="8.2"
 fm_v="7.15.1"
 
 # Defining software pack - minimal: mail + file manager (no database)
-software="acl apt-transport-https ca-certificates clamav-daemon cron curl dovecot-imapd
+software="acl apt-transport-https ca-certificates clamav-daemon cron curl dnsutils dovecot-imapd
   dovecot-managesieved dovecot-pop3d dovecot-sieve exim4 exim4-daemon-heavy expect
   git hestia=${HESTIA_INSTALL_BUILD} hestia-nginx hestia-php hestia-web-terminal jq libmail-dkim-perl lsb-release
   mc net-tools nodejs
@@ -88,7 +88,7 @@ software="acl apt-transport-https ca-certificates clamav-daemon cron curl doveco
   php${fpm_v}-imap php${fpm_v}-intl php${fpm_v}-ldap php${fpm_v}-mbstring
   php${fpm_v}-pspell php${fpm_v}-readline
   php${fpm_v}-xml php${fpm_v}-zip php${fpm_v}-sqlite3 php${fpm_v}-fpm sqlite3 spamd unrar-free
-  unzip util-linux vim-common whois zip zstd restic composer"
+  unzip util-linux vim-common xxd whois zip zstd restic composer"
 
 installer_dependencies="apt-transport-https ca-certificates curl dirmngr gnupg openssl wget sudo"
 
@@ -956,6 +956,9 @@ echo -e "\n[ * ] Configuring Nginx..."
 
 # Ensure domain config directory exists for reverse proxy configurations
 mkdir -p /etc/nginx/conf.d/domains
+# Nginx templates (webmail etc.) log to per-domain files under this directory;
+# it must exist before the first v-add-mail-domain-webmail or nginx -t will fail.
+mkdir -p /var/log/nginx/domains
 
 # Create minimal nginx config (domains are added dynamically via v-add-domain)
 cat > /etc/nginx/conf.d/minipanel.conf << NGINX
