@@ -762,7 +762,27 @@ check_result $? "Failed to copy func/ libraries from $MINIPANEL_SRC/func"
 mkdir -p $HESTIA/func/internal
 cp -rf "$MINIPANEL_SRC/func/internal/"* $HESTIA/func/internal/ 2>> $LOG
 
-# Copy web/ UI
+# Build the panel front-end assets (CSS/JS).
+#
+# Hestia-Mini is its own project: its UI lives in web/css/src and web/js/src and
+# must be compiled. Otherwise the panel keeps serving the upstream `hestia`
+# package's prebuilt bundles and any Mini front-end change never appears.
+if [ -f "$MINIPANEL_SRC/build.js" ] && [ -f "$MINIPANEL_SRC/package.json" ]; then
+	echo -e "\n[ * ] Building panel front-end assets..."
+	if ! command -v npm > /dev/null 2>&1; then
+		check_result 1 "npm is required to build the panel front-end assets but was not found"
+	fi
+	(
+		cd "$MINIPANEL_SRC" || exit 1
+		npm install --include=dev --no-audit --no-fund
+		npm run build
+	) >> "$LOG" 2>&1
+	check_result $? "Failed to build the panel front-end assets - check $LOG"
+else
+	check_result 1 "build.js/package.json not found in $MINIPANEL_SRC - cannot build the panel UI"
+fi
+
+# Copy web/ UI (source + freshly built css/themes and js/dist)
 cp -rf "$MINIPANEL_SRC/web/"* $HESTIA/web/ 2>> $LOG
 check_result $? "Failed to copy web/ UI from $MINIPANEL_SRC/web"
 

@@ -1,0 +1,6 @@
+# Dependencies installed for the front-end asset build
+node_modules/
+
+# Front-end build outputs (regenerate with `npm run build`)
+web/css/themes/
+web/js/dist/

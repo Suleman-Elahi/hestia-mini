@@ -5,26 +5,42 @@ export default async function initWebTerminal() {
 	}
 
 	const Terminal = await loadXterm();
+	const FitAddon = await loadFitAddon();
 	const terminal = new Terminal();
-	let Addon = null;
+	const fitAddon = new FitAddon();
+	terminal.loadAddon(fitAddon);
+
+	// The WebGL renderer is a performance optimisation only; xterm falls back to
+	// its default renderer when it is unavailable.
 	if (typeof WebGL2RenderingContext !== 'undefined') {
-		Addon = await loadWebGLAddon();
-	} else {
-		Addon = await loadCanvasAddon();
+		try {
+			const WebglAddon = await loadWebGLAddon();
+			terminal.loadAddon(new WebglAddon());
+		} catch {
+			// Ignore and keep the default renderer.
+		}
 	}
-	terminal.loadAddon(new Addon());
+
 	terminal.open(container);
 
 	const socket = new WebSocket(`wss://${window.location.host}/_shell/`);
 	const resizeTerminal = () => {
-		// Xterm's fixed-width cells are approximately 9x18 pixels with the
-		// default font. Keep the browser grid and server PTY in sync so editors
-		// such as Nano wrap pasted text at the visible terminal width.
-		const cols = Math.max(20, Math.floor(container.clientWidth / 9));
-		const rows = Math.max(5, Math.floor(container.clientHeight / 18));
-		terminal.resize(cols, rows);
+		try {
+			fitAddon.fit();
+		} catch {
+			// The container is not measurable yet (e.g. mid-layout).
+			return;
+		}
+		// Keep the browser grid and the server PTY in sync so full-screen
+		// editors such as nano/vim wrap at the visible width.
 		if (socket.readyState === WebSocket.OPEN) {
-			socket.send(JSON.stringify({ type: 'resize', cols, rows }));
+			socket.send(
+				JSON.stringify({
+					type: 'resize',
+					cols: terminal.cols,
+					rows: terminal.rows,
+				}),
+			);
 		}
 	};
 	new ResizeObserver(resizeTerminal).observe(container);
@@ -64,11 +80,11 @@ async function loadWebGLAddon() {
 	return xtermModule.default.WebglAddon;
 }
 
-/** @returns {Promise<typeof import("@xterm/addon-canvas").CanvasAddon>} */
-async function loadCanvasAddon() {
+/** @returns {Promise<typeof import("@xterm/addon-fit").FitAddon>} */
+async function loadFitAddon() {
 	// NOTE: String expression used to prevent ESBuild from resolving
-	// the import on build (xterm-addon-canvas is a separate bundle)
-	const xtermBundlePath = '/js/dist/xterm-addon-canvas.min.js';
+	// the import on build (xterm is a separate bundle)
+	const xtermBundlePath = '/js/dist/xterm-addon-fit.min.js';
 	const xtermModule = await import(`${xtermBundlePath}`);
-	return xtermModule.default.CanvasAddon;
+	return xtermModule.default.FitAddon;
 }

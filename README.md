@@ -115,10 +115,30 @@ Uninstall is destructive by default — always run `--dry-run` first.
 | `func/` | Shell function library (`main.sh`, `domain.sh`, `domain_proxy.sh`, `ip.sh`, `rebuild.sh`, `syshealth.sh`, `upgrade.sh`) |
 | `src/` | Backend source files (e.g. `deb/web-terminal/` — Node.js WebSocket-to-PTY bridge) |
 | `web/` | Panel web UI (PHP) — `inc/` core, `add/`, `edit/`, `delete/`, `list/`, `login/`, `api/`, `src/`, themes, locale |
+| `web/css/src/`, `web/js/src/` | Front-end sources compiled into `web/css/themes/*.min.css` and `web/js/dist/*` |
+| `build.js`, `package.json` | Front-end asset build (esbuild + Lightning CSS) |
 | `install/` | Installer (`hestia-mini-install.sh`), uninstaller (`hestia-mini-uninstall.sh`), and packaged config templates |
 | `conf/` | Default panel configuration (`hestia.conf`, with `minipanel.conf` kept as a compatibility symlink) |
 | `data/` | Runtime data (`users/`, `packages/`, `queue/`) |
 | `docs/` | Documentation |
+
+---
+
+## Front-end build
+
+`web/css/src/**` (styles) and `web/js/src/**` (scripts) are the panel's real
+front-end sources. They are compiled into `web/css/themes/*.min.css` and
+`web/js/dist/*`:
+
+```bash
+npm install
+npm run build
+```
+
+The installer runs this automatically, so a fresh install always deploys
+Hestia-Mini's own UI (the upstream `hestia` package only ships upstream's
+prebuilt bundles). After changing anything under `web/css/src` or
+`web/js/src`, re-run `npm run build` and redeploy the built files.
 
 ---
 
