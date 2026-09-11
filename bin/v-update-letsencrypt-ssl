@@ -153,6 +153,15 @@ for user in $("$BIN/v-list-users" list); do
 					update_object_value 'domain' 'DOMAIN' "$domain" '$LETSENCRYPT_FAIL_COUNT' "$fail_counter"
 				else
 					$BIN/v-log-action "$user" "Info" "Domain" "Let's Encrypt SSL certificate renewed (Proxy domain: $domain)."
+					# When the panel is exposed through this proxy domain, refresh the
+					# certificate used by the panel's own HTTPS listener as well.
+					if [ -n "$HOSTNAME" ] && [ "$domain" = "$HOSTNAME" ] && [ -s "$USER_DATA/ssl/$domain.crt" ]; then
+						cp -f "$USER_DATA/ssl/$domain.crt" "$HESTIA/ssl/certificate.crt"
+						cp -f "$USER_DATA/ssl/$domain.key" "$HESTIA/ssl/certificate.key"
+						chown root:mail "$HESTIA/ssl/certificate.crt" "$HESTIA/ssl/certificate.key"
+						chmod 660 "$HESTIA/ssl/certificate.crt" "$HESTIA/ssl/certificate.key"
+						$BIN/v-restart-service 'hestia' > /dev/null 2>&1 || true
+					fi
 				fi
 			fi
 		done < "$USER_DATA/domain.conf"

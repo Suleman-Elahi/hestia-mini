@@ -62,11 +62,17 @@ const wss = new WebSocketServer({
 
 		const origin = info.origin || info.req.headers.origin;
 		const panelHosts = new Set([hostname, config.HOSTNAME, ...Object.keys(systemIPs)]);
-		const allowedOrigins = new Set(
-			[...panelHosts]
-				.filter((host) => typeof host === 'string' && host.length > 0)
-				.map((host) => `https://${host}:${config.BACKEND_PORT}`),
-		);
+		const allowedOrigins = new Set();
+		for (const host of panelHosts) {
+			if (typeof host !== 'string' || host.length === 0) {
+				continue;
+			}
+			// Direct panel access (https://host:PORT) and reverse-proxied access
+			// on the default ports (https://host / http://host).
+			allowedOrigins.add(`https://${host}:${config.BACKEND_PORT}`);
+			allowedOrigins.add(`https://${host}`);
+			allowedOrigins.add(`http://${host}`);
+		}
 
 		if (allowedOrigins.has(origin)) {
 			cb(true);

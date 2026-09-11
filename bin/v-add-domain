@@ -4,6 +4,10 @@
 #
 # example: v-add-domain admin example.com 127.0.0.1:8080
 # example: v-add-domain admin example.com "10.1.0.101:8080 10.1.0.102:8080" round_robin no yes
+# example: v-add-domain admin panel.example.com https://127.0.0.1:8083 round_robin yes yes
+#
+# Targets may be prefixed with http:// (default) or https:// to select the
+# protocol used when connecting to the upstream, e.g. a TLS-terminating panel.
 #
 # This function adds a domain with Nginx reverse proxy configuration.
 
@@ -77,10 +81,10 @@ if [ -f "$USER_DATA/domain.conf" ] && grep -q "DOMAIN='$domain'" "$USER_DATA/dom
 	check_result "$E_EXISTS" "domain $domain already exists"
 fi
 
-# Verify target format (HOST:PORT or IP:PORT, optional weight/params)
+# Verify target format (HOST:PORT or IP:PORT, optional http(s):// prefix, optional weight/params)
 for target in $targets; do
-	if [[ ! "$target" =~ ^[a-zA-Z0-9.-]+:[0-9]+(\ +.*)?$ ]]; then
-		check_result "$E_INVALID" "invalid target format: $target (must be HOST:PORT or IP:PORT)"
+	if [[ ! "$target" =~ ^(https?://)?[a-zA-Z0-9.-]+:[0-9]+(\ +.*)?$ ]]; then
+		check_result "$E_INVALID" "invalid target format: $target (must be HOST:PORT or IP:PORT, optionally prefixed with http:// or https://)"
 	fi
 done
 

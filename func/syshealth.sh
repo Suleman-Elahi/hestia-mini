@@ -624,3 +624,92 @@ syshealth_adapt_nginx_resolver() {
 		fi
 	fi
 }
+
+# Install the TLS 1.3 0-RTT anti-replay map used by the inherited Nginx
+# templates (*.stpl). Mini copies the upstream templates, but its installer
+# historically did not ship the matching map. Without this file nginx rejects
+# every SSL vhost that references $anti_replay with:
+#   unknown "anti_replay" variable
+# Upstream ships the map via install/hst-install-*.sh; this keeps Mini in sync
+# and self-heals existing installations on upgrade.
+function syshealth_repair_nginx_anti_replay() {
+	local map_conf="/etc/nginx/conf.d/0rtt-anti-replay.conf"
+
+	# Skip when the map already exists or nginx is not present.
+	if [ -f "$map_conf" ]; then
+		return 0
+	fi
+	if [ ! -d /etc/nginx/conf.d ] && ! command -v nginx > /dev/null 2>&1; then
+		return 0
+	fi
+
+	mkdir -p /etc/nginx/conf.d
+
+	local src="$HESTIA/install/deb/nginx/0rtt-anti-replay.conf"
+	if [ -f "$src" ]; then
+		cp -f "$src" "$map_conf"
+	else
+		cat > "$map_conf" << 'NGINXMAP'
+# Implement TLS 1.3 0-RTT anti-replay for NGINX
+# Requires: NGINX directive "ssl_early_data" on
+map "$request_method:$is_args" $ar_idempotent {
+	default                              0;
+	"~^GET:$|^(HEAD|OPTIONS|TRACE):\?*$" 1;
+}
+
+map $http_user_agent $ar_support_425 {
+	default                                           0;
+	"~Firefox/((58|59)|([6-9]\d)|([1-9]\d{2,}))\.\d+" 1;
+}
+
+map "$ssl_early_data:$ar_idempotent:$ar_support_425" $anti_replay {
+	1:0:0 307;
+	1:0:1 425;
+}
+
+map "$ssl_early_data:$ar_support_425" $rfc_early_data {
+	1:1 1;
+}
+NGINXMAP
+	fi
+
+	return 0
+}
+
+# Repair the mail subsystem name and the /etc/exim4/domains symlinks.
+#
+# Older Hestia-Mini builds wrote MAIL_SYSTEM='exim'. Every consumer (Exim,
+# Dovecot, v-rebuild-mail-domain and several v-*-mail-* scripts) expects
+# 'exim4', and v-add-mail-domain linked domains under /etc/$MAIL_SYSTEM/domains
+# — i.e. the non-existent /etc/exim/domains. As a result Dovecot could not read
+# /etc/exim4/domains/<domain>/passwd and webmail/IMAP logins failed. This
+# restores the expected value and recreates any missing symlinks.
+function syshealth_repair_mail_system_name() {
+	local home_dir="${HOMEDIR:-/home}"
+	local exim_domains_dir="/etc/exim4/domains"
+
+	if [ "$MAIL_SYSTEM" = 'exim' ] && [ -d /etc/exim4 ]; then
+		echo "[ ! ] Repairing MAIL_SYSTEM ('exim' -> 'exim4')"
+		"$HESTIA/bin/v-change-sys-config-value" 'MAIL_SYSTEM' 'exim4'
+		MAIL_SYSTEM='exim4'
+	fi
+
+	[ -d /etc/exim4 ] || return 0
+	mkdir -p "$exim_domains_dir"
+
+	local user_conf user mail_domain mail_dir
+	for user_conf in "$HESTIA"/data/users/*/mail.conf; do
+		[ -f "$user_conf" ] || continue
+		user="$(basename "$(dirname "$user_conf")")"
+		for mail_domain in $(grep -oE "^DOMAIN='[^']+'" "$user_conf" | cut -d "'" -f2); do
+			[ -n "$mail_domain" ] || continue
+			mail_dir="$home_dir/$user/conf/mail/$mail_domain"
+			if [ -d "$mail_dir" ] && [ ! -e "$exim_domains_dir/$mail_domain" ]; then
+				echo "[ ! ] Re-linking mail domain $mail_domain into $exim_domains_dir"
+				ln -s "$mail_dir" "$exim_domains_dir/$mail_domain"
+			fi
+		done
+	done
+
+	return 0
+}

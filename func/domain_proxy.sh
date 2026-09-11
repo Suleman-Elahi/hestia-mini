@@ -6,6 +6,25 @@
 #                                                                           #
 #===========================================================================#
 
+# Strip an optional http:// or https:// scheme from a proxy target.
+# Usage: strip_target_scheme <target>
+strip_target_scheme() {
+	local target="$1"
+	target="${target#http://}"
+	target="${target#https://}"
+	echo "$target"
+}
+
+# Return the scheme (http or https) of the first proxy target.
+# Usage: get_target_scheme <targets>
+get_target_scheme() {
+	local first_target="${1%% *}"
+	case "$first_target" in
+		https://*) echo "https" ;;
+		*) echo "http" ;;
+	esac
+}
+
 # Generate Nginx upstream block for a domain
 # Usage: generate_upstream_block <domain> <algorithm> <targets>
 generate_upstream_block() {
@@ -36,17 +55,18 @@ generate_upstream_block() {
 
 	echo ""
 
-	# Parse targets - each target is "IP:PORT [weight=N]"
+	# Parse targets - each target is "IP:PORT [weight=N]", optionally
+	# prefixed with http:// or https:// to select the upstream protocol.
 	for target in $targets; do
 		[ -z "$target" ] && continue
-		echo "    server $target;"
+		echo "    server $(strip_target_scheme "$target");"
 	done
 
 	echo "}"
 }
 
 # Generate Nginx server block for a domain
-# Usage: generate_server_block <user> <domain> <algorithm> <ssl_enabled> <ssl_cert_path> <ssl_key_path>
+# Usage: generate_server_block <user> <domain> <algorithm> <ssl_enabled> <ssl_cert_path> <ssl_key_path> <targets>
 generate_server_block() {
 	local user="$1"
 	local domain="$2"
@@ -54,6 +74,8 @@ generate_server_block() {
 	local ssl_enabled="$4"
 	local ssl_cert_path="${5:-}"
 	local ssl_key_path="${6:-}"
+	local targets="${7:-}"
+	local scheme="$(get_target_scheme "$targets")"
 	local upstream_name="$(echo "${domain}_backend" | tr '.-' '__')"
 
 	local has_valid_ssl="no"
@@ -98,7 +120,13 @@ generate_server_block() {
 		echo "        }"
 		echo ""
 	fi
-	echo "        proxy_pass http://${upstream_name};"
+	echo "        proxy_pass ${scheme}://${upstream_name};"
+	if [ "$scheme" = "https" ]; then
+		# The upstream terminates TLS itself (e.g. the Hestia panel on 8083).
+		echo "        proxy_ssl_server_name on;"
+		echo "        proxy_ssl_name \$host;"
+		echo "        proxy_ssl_verify off;"
+	fi
 	echo "        proxy_set_header Host \$host;"
 	echo "        proxy_set_header X-Real-IP \$remote_addr;"
 	echo "        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;"
@@ -141,9 +169,9 @@ write_domain_config() {
 		if [ "$ssl_enabled" = "yes" ]; then
 			local cert_dir="$USER_DATA/ssl"
 			generate_server_block "$user" "$domain" "$algorithm" "yes" \
-				"$cert_dir/$domain.crt" "$cert_dir/$domain.key"
+				"$cert_dir/$domain.crt" "$cert_dir/$domain.key" "$targets"
 		else
-			generate_server_block "$user" "$domain" "$algorithm" "no"
+			generate_server_block "$user" "$domain" "$algorithm" "no" "" "" "$targets"
 		fi
 	} > "$nginx_conf"
 

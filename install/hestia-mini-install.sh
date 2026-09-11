@@ -826,7 +826,7 @@ if [ -z "$ADMIN_EMAIL" ]; then
 fi
 rm -f "$HESTIA/conf/minipanel.conf"
 cat > $HESTIA/conf/hestia.conf << EOF
-MAIL_SYSTEM='exim'
+MAIL_SYSTEM='exim4'
 ANTIVIRUS_SYSTEM='clamav-daemon'
 ANTISPAM_SYSTEM='$([ "$os" = 'debian' ] && [ "$release" -lt 12 ] && echo 'spamassassin' || echo 'spamd')'
 IMAP_SYSTEM='dovecot'
@@ -967,6 +967,38 @@ cat > /etc/nginx/conf.d/minipanel.conf << NGINX
 include /etc/nginx/conf.d/domains/*.conf;
 NGINX
 
+# The inherited web/mail nginx templates (*.stpl) reference the TLS 1.3 0-RTT
+# anti-replay variable $anti_replay. Upstream installers ship the map that
+# defines it; Mini must too, otherwise nginx -t fails later with:
+#   unknown "anti_replay" variable
+# The filename must sort before minipanel.conf so the map is defined first.
+if [ -f "$HESTIA_INSTALL_DIR/nginx/0rtt-anti-replay.conf" ]; then
+	cp -f "$HESTIA_INSTALL_DIR/nginx/0rtt-anti-replay.conf" /etc/nginx/conf.d/ 2>> "$LOG"
+else
+	cat > /etc/nginx/conf.d/0rtt-anti-replay.conf << 'NGINXMAP'
+# Implement TLS 1.3 0-RTT anti-replay for NGINX
+# Requires: NGINX directive "ssl_early_data" on
+map "$request_method:$is_args" $ar_idempotent {
+	default                              0;
+	"~^GET:$|^(HEAD|OPTIONS|TRACE):\?*$" 1;
+}
+
+map $http_user_agent $ar_support_425 {
+	default                                           0;
+	"~Firefox/((58|59)|([6-9]\d)|([1-9]\d{2,}))\.\d+" 1;
+}
+
+map "$ssl_early_data:$ar_idempotent:$ar_support_425" $anti_replay {
+	1:0:0 307;
+	1:0:1 425;
+}
+
+map "$ssl_early_data:$ar_support_425" $rfc_early_data {
+	1:1 1;
+}
+NGINXMAP
+fi
+
 nginx -t >> $LOG 2>&1
 check_result $? "Nginx configuration test failed - check $LOG"
 
@@ -1070,6 +1102,11 @@ if [ -f "$HESTIA/func/syshealth.sh" ]; then
 	syshealth_repair_system_config 2>> "$LOG"
 	syshealth_adapt_hestia_nginx_listen_ports 2>> "$LOG"
 	syshealth_adapt_nginx_resolver 2>> "$LOG"
+	# Heal installs upgraded from a version that copied the upstream *.stpl
+	# templates without shipping the 0-RTT anti-replay map.
+	syshealth_repair_nginx_anti_replay 2>> "$LOG"
+	# Heal installs that used MAIL_SYSTEM='exim' (broke dovecot/exim paths).
+	syshealth_repair_mail_system_name 2>> "$LOG"
 fi
 
 # Set backend port
@@ -1211,7 +1248,8 @@ echo -e "\n====================================================="
 echo -e "  Hestia-Mini has been installed successfully!"
 echo -e "\n"
 if [ -n "${PANEL_DOMAIN:-}" ]; then
-	echo -e "  Admin URL:  https://$PANEL_DOMAIN:$port"
+	echo -e "  Admin URL:  https://$PANEL_DOMAIN"
+	echo -e "  Direct URL: https://$PANEL_DOMAIN:$port"
 else
 	echo -e "  Admin URL:  https://$(hostname):$port"
 fi

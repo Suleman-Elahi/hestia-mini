@@ -14,29 +14,29 @@ configure_panel_ssl() {
 
 	# If no domain was provided via CLI and we're interactive, ask
 	if [ -z "$panel_domain" ] && [ "$ASSUME_YES" != 'yes' ]; then
-		echo -e "\n${YELLOW}=== Panel SSL Configuration (Let's Encrypt) ===${NC}"
+		echo -e "\n${YELLOW}=== Panel Domain (Reverse Proxy + Let's Encrypt) ===${NC}"
 		echo "  If you have a domain/subdomain (e.g. panel.example.com) pointed to this"
-		echo "  server's IP, we can automatically obtain a free Let's Encrypt SSL"
-		echo "  certificate for the panel."
+		echo "  server's IP, it will be added as a reverse-proxy domain and given a free"
+		echo "  Let's Encrypt certificate, so the panel is reachable on the standard"
+		echo "  HTTPS port (https://panel.example.com)."
 		echo ""
 		echo "  Requirements:"
 		echo "    - The domain's DNS A record must point to this server"
-		echo "    - Port 80 must be temporarily available for the ACME challenge"
+		echo "    - Port 80 must be reachable from the internet (HTTP-01 challenge)"
 		echo ""
 		read -r -p "  Enter panel domain (or press Enter to skip): " panel_domain
 	fi
 
 	# Nothing to do if no domain provided
 	if [ -z "$panel_domain" ]; then
-		echo -e "\n[ * ] Skipping Let's Encrypt SSL (no panel domain provided)."
-		echo "      The panel will use a self-signed certificate."
-		echo "      You can set up SSL later by running:"
-		echo "        certbot certonly --standalone -d your-domain.com"
-		echo "        Then copy certs to $HESTIA/ssl/ and restart hestia."
+		echo -e "\n[ * ] Skipping panel domain setup (no domain provided)."
+		echo "      The panel will use a self-signed certificate on its own port."
+		echo "      You can add it later from the panel:"
+		echo "        Domains -> Add Domain -> https://127.0.0.1:$port"
 		return 0
 	fi
 
-	echo -e "\n[ * ] Setting up Let's Encrypt SSL for: $panel_domain"
+	echo -e "\n[ * ] Setting up panel domain: $panel_domain"
 
 	# Validate domain format (basic check)
 	if ! echo "$panel_domain" | grep -qP '^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$'; then
@@ -45,116 +45,62 @@ configure_panel_ssl() {
 		return 0
 	fi
 
-	# Install certbot if not present
-	if ! command -v certbot > /dev/null 2>&1; then
-		echo "  Installing certbot..."
-		apt-get -y install certbot >> "$LOG" 2>&1
+	# Resolve the panel backend (hestia-nginx HTTPS listener) port.
+	local backend_port="${port:-${BACKEND_PORT:-8083}}"
+	local backend_target="https://127.0.0.1:${backend_port}"
+
+	# Register the panel domain as a managed reverse-proxy domain. Passing
+	# SSL=yes makes Hestia issue and renew the Let's Encrypt certificate through
+	# its own manager (no certbot), so the domain appears in Domains -> Reverse
+	# Proxy and the panel becomes reachable on the standard HTTPS port (443).
+	local domain_conf="$HESTIA/data/users/admin/domain.conf"
+	if [ -f "$domain_conf" ] && grep -q "DOMAIN='$panel_domain'" "$domain_conf"; then
+		echo "  Panel domain already configured, refreshing certificate..."
+	else
+		echo "  Creating reverse proxy for https://$panel_domain ..."
+		if [ ! -x "$HESTIA/bin/v-add-domain" ]; then
+			echo -e "  ${YELLOW}Warning: v-add-domain is unavailable. Skipping SSL setup.${NC}"
+			return 0
+		fi
+
+		"$HESTIA/bin/v-add-domain" admin "$panel_domain" "$backend_target" \
+			"round_robin" "yes" "yes" "manual" >> "$LOG" 2>&1
 		if [ $? -ne 0 ]; then
-			echo -e "  ${YELLOW}Warning: Failed to install certbot. Skipping SSL setup.${NC}"
+			echo -e "  ${YELLOW}Warning: Could not create the panel reverse proxy / obtain a Let's Encrypt certificate.${NC}"
+			echo "  The panel remains available at https://$panel_domain:${backend_port}"
+			echo "  Check the log for details: $LOG"
 			return 0
 		fi
 	fi
 
-	# Check if port 80 is free (temporarily stop nginx if it's using it)
-	local nginx_was_on_80='no'
-	if ss -tlnp 2>/dev/null | grep -q ':80 '; then
-		if ss -tlnp 2>/dev/null | grep ':80 ' | grep -q 'nginx'; then
-			echo "  Temporarily stopping nginx for ACME challenge..."
-			systemctl stop nginx >> "$LOG" 2>&1
-			nginx_was_on_80='yes'
-		else
-			echo -e "  ${YELLOW}Warning: Port 80 is in use by another service.${NC}"
-			echo "  Let's Encrypt requires port 80 for domain validation."
-			echo "  Skipping SSL setup. You can configure it manually later."
-			return 0
-		fi
-	fi
-
-	# Request certificate
-	echo "  Requesting certificate from Let's Encrypt..."
-	certbot certonly \
-		--standalone \
-		--non-interactive \
-		--agree-tos \
-		--email "$ADMIN_EMAIL" \
-		--domain "$panel_domain" \
-		--preferred-challenges http \
-		>> "$LOG" 2>&1
-	local cert_status=$?
-
-	# Restart nginx if we stopped it
-	if [ "$nginx_was_on_80" = 'yes' ]; then
-		systemctl start nginx >> "$LOG" 2>&1
-	fi
-
-	if [ "$cert_status" -ne 0 ]; then
-		echo -e "  ${YELLOW}Warning: Let's Encrypt certificate request failed.${NC}"
-		echo "  The panel will continue with its self-signed certificate."
-		echo "  Check the log for details: $LOG"
-		echo "  You can retry later with:"
-		echo "    certbot certonly --standalone -d $panel_domain"
-		return 0
-	fi
-
-	# Deploy certificate
-	local le_live="/etc/letsencrypt/live/$panel_domain"
-	if [ ! -f "$le_live/fullchain.pem" ] || [ ! -f "$le_live/privkey.pem" ]; then
-		echo -e "  ${YELLOW}Warning: Certificate files not found at $le_live${NC}"
-		return 0
-	fi
-
-	echo "  Deploying certificate..."
-	cp -L "$le_live/fullchain.pem" "$HESTIA/ssl/certificate.crt"
-	cp -L "$le_live/privkey.pem" "$HESTIA/ssl/certificate.key"
-	chown root:mail "$HESTIA/ssl/certificate.crt" "$HESTIA/ssl/certificate.key"
-	chmod 660 "$HESTIA/ssl/certificate.crt" "$HESTIA/ssl/certificate.key"
-
-	# Create renewal deploy hook
-	mkdir -p /etc/letsencrypt/renewal-hooks/deploy
-	cat > /etc/letsencrypt/renewal-hooks/deploy/hestia-mini.sh << 'DEPLOY_HOOK'
-#!/bin/bash
-# Hestia-Mini: deploy renewed Let's Encrypt certificate
-HESTIA='/usr/local/hestia'
-
-for domain in $RENEWED_DOMAINS; do
-	HOSTNAME_CONF=$(grep "^HOSTNAME=" "$HESTIA/conf/hestia.conf" 2>/dev/null | cut -d "'" -f2)
-	if [ "$domain" = "$HOSTNAME_CONF" ]; then
-		cp -L "$RENEWED_LINEAGE/fullchain.pem" "$HESTIA/ssl/certificate.crt"
-		cp -L "$RENEWED_LINEAGE/privkey.pem" "$HESTIA/ssl/certificate.key"
+	# Reuse the issued certificate for the panel's own HTTPS listener so direct
+	# :${backend_port} access is trusted as well. v-update-letsencrypt-ssl keeps
+	# this copy refreshed on renewal.
+	local user_ssl_dir="$HESTIA/data/users/admin/ssl"
+	if [ -s "$user_ssl_dir/$panel_domain.crt" ] && [ -s "$user_ssl_dir/$panel_domain.key" ]; then
+		cp -f "$user_ssl_dir/$panel_domain.crt" "$HESTIA/ssl/certificate.crt"
+		cp -f "$user_ssl_dir/$panel_domain.key" "$HESTIA/ssl/certificate.key"
 		chown root:mail "$HESTIA/ssl/certificate.crt" "$HESTIA/ssl/certificate.key"
 		chmod 660 "$HESTIA/ssl/certificate.crt" "$HESTIA/ssl/certificate.key"
-		systemctl restart hestia 2>/dev/null || true
-		systemctl restart dovecot 2>/dev/null || true
-		systemctl restart exim4 2>/dev/null || true
-		break
-	fi
-done
-DEPLOY_HOOK
-	chmod 755 /etc/letsencrypt/renewal-hooks/deploy/hestia-mini.sh
-
-	# Enable certbot auto-renewal timer
-	if systemctl list-unit-files certbot.timer > /dev/null 2>&1; then
-		systemctl enable certbot.timer >> "$LOG" 2>&1
-		systemctl start certbot.timer >> "$LOG" 2>&1
-	else
-		if ! crontab -l 2>/dev/null | grep -q 'certbot renew'; then
-			(crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet --deploy-hook /etc/letsencrypt/renewal-hooks/deploy/hestia-mini.sh") | crontab -
-		fi
 	fi
 
-	# Update hostname in hestia.conf
+	# Update hostname in hestia.conf so the web terminal allow-list and
+	# certificate renewal matching use the panel domain.
 	if [ -f "$HESTIA/conf/hestia.conf" ]; then
 		sed -i "s|^HOSTNAME=.*|HOSTNAME='$panel_domain'|" "$HESTIA/conf/hestia.conf"
 	fi
 
 	PANEL_DOMAIN="$panel_domain"
 
-	# The Web Terminal reads its allowed panel origins at startup. Reload it
-	# after persisting the panel domain so WebSocket upgrades are accepted.
+	# Reload the panel so the renewed certificate is served, then restart the
+	# Web Terminal so WebSocket upgrades are accepted on both
+	# https://<domain> and https://<domain>:<port>.
+	systemctl restart hestia >> "$LOG" 2>&1 || true
 	systemctl restart hestia-web-terminal >> "$LOG" 2>&1
 	warn_only $? "Could not restart the web terminal service after setting the panel domain"
 
-	echo -e "  ${GREEN}Let's Encrypt SSL certificate installed successfully!${NC}"
-	echo "  Certificate will auto-renew via certbot timer."
-	echo "  Panel domain: https://$panel_domain:$port"
+	echo -e "  ${GREEN}Panel reverse proxy and Let's Encrypt certificate configured!${NC}"
+	echo "  Panel URL:  https://$panel_domain"
+	echo "  Direct URL: https://$panel_domain:$backend_port"
+	echo "  The certificate renews automatically with the rest of the panel."
 }

@@ -170,10 +170,18 @@ sudo bash install/minipanel-install.sh --yes --purge-mta \
   currently listening on — always cross-check against the Section 1.1
   audit output yourself, especially if the other panel is not running at
   install time.
-- **Panel HTTPS cert replacement**: the installer generates a self-signed
-  certificate automatically. To replace it with a real certificate
-  (purchased, or issued externally via `certbot --manual` since there's no
-  web server on port 80 for an HTTP-01 challenge), do it manually:
+- **Panel domain & HTTPS**: the installer generates a self-signed certificate
+  automatically for the panel's own port. Pass `--panel-domain panel.example.com`
+  (or answer the interactive prompt) to register the panel domain as a managed
+  reverse-proxy domain: it appears under **Domains → Reverse Proxy**, gets a free
+  Let's Encrypt certificate via Hestia's own ACME manager, and the panel becomes
+  reachable on the standard HTTPS port (`https://panel.example.com`). The same
+  certificate is copied to `/usr/local/hestia/ssl/` for direct
+  `https://panel.example.com:8083` access, and `v-update-letsencrypt-ssl` keeps it
+  refreshed on renewal. Requirements: the domain's A record must point at this
+  server, and port 80 must be reachable for the HTTP-01 challenge.
+
+  To install a certificate issued elsewhere instead, replace the files manually:
 
   ```bash
   sudo cp your-cert.crt /usr/local/hestia/ssl/certificate.crt

@@ -789,6 +789,15 @@ upgrade_replace_default_config() {
 	syshealth_update_db_config_format
 	syshealth_update_user_config_format
 
+	# Ensure the nginx 0-RTT anti-replay map exists. The inherited *.stpl
+	# templates reference $anti_replay, and without the map nginx config
+	# tests (and therefore webmail SSL) fail with "unknown anti_replay".
+	syshealth_repair_nginx_anti_replay
+
+	# Repair the historical MAIL_SYSTEM='exim' value and the missing
+	# /etc/exim4/domains symlinks that broke Dovecot/webmail logins.
+	syshealth_repair_mail_system_name
+
 	# Protect custom Exim DNSBL entries during package upgrades
 	if [ -f "$HESTIA/conf/dnsbl.conf" ]; then
 		cp -f "$HESTIA/conf/dnsbl.conf" /etc/exim4/dnsbl.conf

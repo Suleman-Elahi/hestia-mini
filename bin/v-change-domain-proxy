@@ -57,10 +57,10 @@ case "$ssl" in
 		;;
 esac
 
-# Verify target format (HOST:PORT or IP:PORT, optional weight/params)
+# Verify target format (HOST:PORT or IP:PORT, optional http(s):// prefix, optional weight/params)
 for target in $targets; do
-	if [[ ! "$target" =~ ^[a-zA-Z0-9.-]+:[0-9]+(\ +.*)?$ ]]; then
-		check_result "$E_INVALID" "invalid target format: $target (must be HOST:PORT or IP:PORT)"
+	if [[ ! "$target" =~ ^(https?://)?[a-zA-Z0-9.-]+:[0-9]+(\ +.*)?$ ]]; then
+		check_result "$E_INVALID" "invalid target format: $target (must be HOST:PORT or IP:PORT, optionally prefixed with http:// or https://)"
 	fi
 done
 
