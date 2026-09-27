@@ -979,6 +979,33 @@ if [ -d "$HESTIA_INSTALL_DIR/exim" ]; then
 	cp -f "$HESTIA_INSTALL_DIR/exim/system.filter" /etc/exim4/system.filter 2>> "$LOG"
 	touch /etc/exim4/white-blocks.conf
 
+	# The 4.95+ template needs SRS_SECRET for inbound SRS decoding and
+	# forwarded-mail return-path rewriting. Generate a real secret on fresh
+	# installs; never leave the shipped placeholder in place.
+	if [ ! -s /etc/exim4/srs.conf ] || grep -q "TOBEREPLACED" /etc/exim4/srs.conf 2>/dev/null; then
+		srs_secret=$(gen_pass '32' 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789')
+		echo "$srs_secret" > /etc/exim4/srs.conf 2>> "$LOG"
+	fi
+	chmod 640 /etc/exim4/srs.conf 2>> "$LOG"
+	chmod 640 /etc/exim4/exim4.conf.template 2>> "$LOG"
+	chown root:Debian-exim /etc/exim4/srs.conf 2>> "$LOG" || chown root:mail /etc/exim4/srs.conf 2>> "$LOG" || true
+
+	# Dovecot 2.4 (Debian 13) changed mail location handling: the Exim
+	# local_delivery transport must use the passwd home field directly
+	# instead of rebuilding mail/<domain>/<user> paths (mirrors upstream
+	# hst-install-debian.sh). Without this, mail is delivered to a path
+	# Dovecot never reads, so sending works but the inbox stays empty.
+	if dovecot --version 2>/dev/null | grep -q "^2\.4"; then
+		if grep -q 'lookup{\$local_part}dsearch' /etc/exim4/exim4.conf.template 2>/dev/null; then
+			sed -i.bak \
+				-e 's#  directory = "${extract{5}{:}{${lookup{$local_part}lsearch{/etc/exim4/domains/${lookup{$domain}dsearch{/etc/exim4/domains/}}/passwd}}}}/mail/${lookup{$domain}dsearch{/etc/exim4/domains/}}/${lookup{$local_part}dsearch{${extract{5}{:}{${lookup{$local_part}lsearch{/etc/exim4/domains/${lookup{$domain}dsearch{/etc/exim4/domains/}}/passwd}}}}/mail/${lookup{$domain}dsearch{/etc/exim4/domains/}}}}"#  directory = "${extract{5}{:}{${lookup{$local_part}lsearch{/etc/exim4/domains/${lookup{$domain}dsearch{/etc/exim4/domains/}}/passwd}}}}"#' \
+				-e 's#  directory = "${extract{5}{:}{${lookup{$local_part}lsearch{/etc/exim4/domains/${lookup{$domain}dsearch{/etc/exim4/domains/}}/passwd}}}}/mail/${lookup{$domain}dsearch{/etc/exim4/domains/}}/${lookup{$local_part}dsearch{${extract{5}{:}{${lookup{$local_part}lsearch{/etc/exim4/domains/${lookup{$domain}dsearch{/etc/exim4/domains/}}/passwd}}}}/mail/${lookup{$domain}dsearch{/etc/exim4/domains/}}}}/.Spam"#  directory = "${extract{5}{:}{${lookup{$local_part}lsearch{/etc/exim4/domains/${lookup{$domain}dsearch{/etc/exim4/domains/}}/passwd}}}}/.Spam"#' \
+				-e 's#  quota_directory = "${extract{5}{:}{${lookup{$local_part}lsearch{/etc/exim4/domains/${lookup{$domain}dsearch{/etc/exim4/domains/}}/passwd}}}}/mail/${lookup{$domain}dsearch{/etc/exim4/domains/}}/${lookup{$local_part}dsearch{${extract{5}{:}{${lookup{$local_part}lsearch{/etc/exim4/domains/${lookup{$domain}dsearch{/etc/exim4/domains/}}/passwd}}}}/mail/${lookup{$domain}dsearch{/etc/exim4/domains/}}}}"#  quota_directory = "${extract{5}{:}{${lookup{$local_part}lsearch{/etc/exim4/domains/${lookup{$domain}dsearch{/etc/exim4/domains/}}/passwd}}}}"#' \
+				/etc/exim4/exim4.conf.template 2>> "$LOG"
+			rm -f /etc/exim4/exim4.conf.template.bak 2>> "$LOG"
+		fi
+	fi
+
 	# Seed the index from any pre-existing mail domains (reinstall case).
 	for existing_mail in "$HESTIA"/data/users/*/mail.conf; do
 		[ -f "$existing_mail" ] || continue
