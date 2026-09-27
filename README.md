@@ -41,6 +41,16 @@ app marketplace.
 
 ---
 
+## Resource usage
+
+Idle footprint on a 6 GB test host (Exim + Dovecot + Nginx + panel PHP +
+web terminal, ClamAV/SpamAssassin off): **~185 MB RSS** for the whole
+Mini stack, **~440 MB** disk in `/usr/local/hestia`. Comfortable on a
+1–2 GB VPS. Leaving ClamAV enabled adds roughly 200–500 MB on its own,
+so use `--no-antivirus` on the smallest sizes.
+
+---
+
 ## Requirements
 
 - A dedicated **Debian 11/12/13** or **Ubuntu 22.04/24.04/26.04** server, **or** a
