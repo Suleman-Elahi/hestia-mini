@@ -947,7 +947,7 @@ if [ -d "$HESTIA_INSTALL_DIR/exim" ]; then
 	# domain through a fixed index file (lookup results are trusted); the
 	# index itself is maintained by v-add/delete-mail-domain. Idempotent and
 	# a no-op if upstream ever changes these lines.
-	sed -i 's|/etc/exim4/domains/$domain/|/etc/exim4/domains/${lookup{$domain}lsearch{/etc/exim4/domains/index}}/|g' \
+	sed -i 's|/etc/exim4/domains/$domain|/etc/exim4/domains/${lookup{$domain}lsearch{/etc/exim4/domains/index}}|g' \
 		/etc/exim4/exim4.conf.template 2>> "$LOG"
 	# Seed the index from any pre-existing mail domains (reinstall case).
 	for existing_mail in "$HESTIA"/data/users/*/mail.conf; do
