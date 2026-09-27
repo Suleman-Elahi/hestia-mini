@@ -1,5 +1,5 @@
 # Hestia-Mini
-
+![](docs/HestiaMini.jpg)
 A lightweight, standalone admin panel derived from [HestiaCP](https://github.com/hestiacp/hestiacp),
 supporting three focused feature areas: **Email**, **Domain Management**,
 and **Terminal** — with a single `admin` user (no multi-user management).
