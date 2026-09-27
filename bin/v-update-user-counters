@@ -66,6 +66,7 @@ for user in $user_list; do
 	U_DISK_DB=0
 	BANDWIDTH=0
 	U_BANDWIDTH=0
+	U_DOMAINS=0
 	U_WEB_DOMAINS=0
 	U_WEB_SSL=0
 	U_WEB_ALIASES=0
@@ -102,6 +103,11 @@ for user in $user_list; do
 	done
 	if [ "$user" = "$ROOT_USER" ]; then
 		IP_AVAIL=$(ls $HESTIA/data/ips | wc -l)
+	fi
+
+	# Checking reverse-proxy domains (Mini)
+	if [ -f $USER_DATA/domain.conf ]; then
+		U_DOMAINS=$(grep -c "DOMAIN=" $USER_DATA/domain.conf)
 	fi
 
 	# Checking web system
@@ -209,6 +215,7 @@ for user in $user_list; do
 	update_user_value "$user" '$U_DISK_MAIL' "$U_DISK_MAIL"
 	update_user_value "$user" '$U_DISK_DB' "$U_DISK_DB"
 	update_user_value "$user" '$U_BANDWIDTH' "$U_BANDWIDTH"
+	update_user_value "$user" '$U_DOMAINS' "$U_DOMAINS"
 	update_user_value "$user" '$U_WEB_DOMAINS' "$U_WEB_DOMAINS"
 	update_user_value "$user" '$U_WEB_SSL' "$U_WEB_SSL"
 	update_user_value "$user" '$U_WEB_ALIASES' "$U_WEB_ALIASES"

@@ -1064,6 +1064,42 @@ map "$ssl_early_data:$ar_support_425" $rfc_early_data {
 NGINXMAP
 fi
 
+# Remove upstream default catch-all vhosts that bind the server's public IP
+# explicitly (e.g. /etc/nginx/conf.d/<IP>.conf shipped by the hestia
+# package). An IP-specific `listen' takes precedence over Mini's wildcard
+# `listen 80' domain blocks on every supported OS (Debian and Ubuntu), so
+# leaving them in place shadows all managed domains on port 80 (breaking
+# ACME HTTP-01 challenges with a 404) and downgrades port 443 to a
+# 301-to-HTTP catch-all. Only default_server catch-alls are touched; real
+# site configs are never removed. Deleted conffiles are not restored by
+# later package upgrades.
+for shadow_conf in /etc/nginx/conf.d/*.conf; do
+	[ -f "$shadow_conf" ] || continue
+	case "$(basename "$shadow_conf")" in
+		minipanel.conf | 0rtt-anti-replay.conf | domain_*.conf) continue ;;
+	esac
+	if ! grep -Eq '^[[:space:]]*listen[[:space:]]+[^;#]*\bdefault_server\b' "$shadow_conf"; then
+		continue
+	fi
+	shadowing='no'
+	while read -r listen_ip listen_port; do
+		case "$listen_ip" in
+			127.* | ::1) continue ;;
+		esac
+		case "$listen_port" in
+			80 | 443) shadowing='yes' ;;
+		esac
+	done < <(grep -Eo '^[[:space:]]*listen[[:space:]]+[^;#]+' "$shadow_conf" 2>/dev/null \
+		| grep -Eo '(([0-9]{1,3}\.){3}[0-9]{1,3}|\[[^]]+\]):[0-9]+' \
+		| tr -d '[]' | tr ':' ' ')
+	if [ "$shadowing" = 'yes' ]; then
+		shadow_backup="/root/hestia_mini_removed_$(basename "$shadow_conf").$(date +%d%m%Y%H%M%S)"
+		cp -a "$shadow_conf" "$shadow_backup"
+		rm -f "$shadow_conf"
+		echo "[ ! ] Removed shadowing default Nginx vhost $shadow_conf (backup: $shadow_backup)"
+	fi
+done
+
 nginx -t >> $LOG 2>&1
 check_result $? "Nginx configuration test failed - check $LOG"
 

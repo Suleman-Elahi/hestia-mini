@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync, execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { spawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 
@@ -13,6 +13,38 @@ const systemIPs = JSON.parse(
 const { config } = JSON.parse(
 	execSync(`${process.env.HESTIA}/bin/v-list-sys-config json`, { silent: true }).toString(),
 );
+
+// Managed domains reverse-proxied to the panel backend itself, e.g.
+// panel.example.com -> https://127.0.0.1:8083. The panel is reachable
+// through any of them, but HOSTNAME is only rewritten by the installer's
+// panel-domain flow, so a domain secured any other way would otherwise
+// fail the origin check below.
+function panelBackendDomains(backendPort) {
+	const domains = [];
+	let usersDir;
+	try {
+		usersDir = `${process.env.HESTIA}/data/users`;
+		const localBackend = new RegExp(`^(https?://)?(127\\.0\\.0\\.1|localhost):${backendPort}(\\s|$)`);
+		for (const user of readdirSync(usersDir)) {
+			const conf = `${usersDir}/${user}/domain.conf`;
+			if (!existsSync(conf)) {
+				continue;
+			}
+			for (const line of readFileSync(conf, 'utf8').split('\n')) {
+				const match = /DOMAIN='([^']+)'.*TARGETS='([^']*)'/.exec(line);
+				if (!match) {
+					continue;
+				}
+				if (match[2].split(/\s+/).some((target) => localBackend.test(target))) {
+					domains.push(match[1]);
+				}
+			}
+		}
+	} catch {
+		// Never break the handshake on unreadable data files.
+	}
+	return domains;
+}
 
 function parseCookies(cookieHeader) {
 	const cookies = {};
@@ -72,6 +104,14 @@ const wss = new WebSocketServer({
 			allowedOrigins.add(`https://${host}:${config.BACKEND_PORT}`);
 			allowedOrigins.add(`https://${host}`);
 			allowedOrigins.add(`http://${host}`);
+		}
+		// Domains reverse-proxied to the panel backend itself (e.g. a panel
+		// domain secured manually after install, where HOSTNAME was never
+		// rewritten). Read per handshake so newly added panel domains work
+		// without restarting this service.
+		for (const domain of panelBackendDomains(config.BACKEND_PORT)) {
+			allowedOrigins.add(`https://${domain}`);
+			allowedOrigins.add(`http://${domain}`);
 		}
 
 		if (allowedOrigins.has(origin)) {

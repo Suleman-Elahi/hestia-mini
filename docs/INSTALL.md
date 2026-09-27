@@ -265,6 +265,14 @@ touch 1Panel or any other software running alongside it — verify with
 
 ## 9. Verifying the install
 
+> **Note:** the installer automatically removes upstream default Nginx
+> catch-all vhosts that bind the server's public IP explicitly (e.g.
+> `/etc/nginx/conf.d/<IP>.conf`). Such IP-specific `listen` directives take
+> precedence over Mini's wildcard domain blocks and would otherwise shadow
+> all managed domains on port 80 (breaking Let's Encrypt HTTP-01 with a
+> 404) and downgrade port 443 to HTTP. Removed files are backed up under
+> `/root/` with a timestamp.
+
 ```bash
 # Confirm panel service is up
 sudo systemctl status hestia
