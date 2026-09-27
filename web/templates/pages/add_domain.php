@@ -7,9 +7,9 @@
 			</a>
 		</div>
 		<div class="toolbar-buttons">
-				<button type="submit" class="button" form="main-form">
-				</button>
-			<?php } ?>
+			<button type="submit" class="button" form="main-form">
+				<i class="fas fa-floppy-disk icon-purple"></i><?= tohtml( _("Save")) ?>
+			</button>
 		</div>
 	</div>
 </div>
