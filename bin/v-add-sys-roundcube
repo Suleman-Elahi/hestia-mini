@@ -356,7 +356,7 @@ installed_v="$(grep RCMAIL_VERSION "$RC_INSTALL_DIR/program/include/iniset.php" 
 # Roundcube is installed only when this command is run explicitly. Once it is
 # available, publish it for every active mail domain without requiring users to
 # recreate their mail domains.
-for user in $("$BIN/v-list-users" list); do
+for user in "$ROOT_USER"; do
 	for domain in $("$BIN/v-list-mail-domains" "$user" plain | cut -f1); do
 		if "$BIN/v-add-mail-domain-webmail" "$user" "$domain" 'roundcube' 'no' 'quiet'; then
 			webmail_routes_added='yes'

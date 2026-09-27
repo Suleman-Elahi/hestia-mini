@@ -2,35 +2,9 @@
 <div class="toolbar">
 	<div class="toolbar-inner">
 		<div class="toolbar-buttons">
-			<a class="button button-secondary button-back js-button-back" href="/list/user/">
+			<a class="button button-secondary button-back js-button-back" href="/list/mail/">
 				<i class="fas fa-arrow-left icon-blue"></i><?= tohtml( _("Back")) ?>
 			</a>
-			<?php
-				if (($_SESSION['userContext'] === 'admin') && ($_SESSION['look'] === '' ) && ($_SESSION['user'] !== $v_username)) {
-					$ssh_key_url = "/list/key/?user=".htmlentities($_GET['user'])."&token=".$_SESSION['token']."";
-					$log_url = "/list/log/?user=".htmlentities($_GET['user'])."&token=".$_SESSION['token']."";
-					$keys_url = "/list/access-key/?user=".htmlentities($_GET['user'])."&token=".$_SESSION['token']."";
-				}else{
-					$ssh_key_url = "/list/key/";
-					$log_url = "/list/log/";
-					$keys_url = "/list/access-key/";
-				}
-			?>
-			<a href="<?= tohtml($ssh_key_url) ?>" class="button button-secondary js-button-create" title="<?= tohtml( _("Manage SSH Keys")) ?>">
-				<i class="fas fa-key icon-orange"></i><?= tohtml( _("Manage SSH Keys")) ?>
-			</a>
-			<?php if ($_SESSION["userContext"] == "admin" || ($_SESSION["userContext"] !== "admin" && $_SESSION["POLICY_USER_VIEW_LOGS"] !== "no")) { ?>
-				<a href="<?= tohtml($log_url) ?>" class="button button-secondary js-button-create" title="<?= tohtml( _("Logs")) ?>">
-					<i class="fas fa-clock-rotate-left icon-maroon"></i><?= tohtml( _("Logs")) ?>
-				</a>
-			<?php } ?>
-			<?php
-				$api_status = (!empty($_SESSION['API_SYSTEM']) && is_numeric($_SESSION['API_SYSTEM'])) ? $_SESSION['API_SYSTEM'] : 0;
-				if (($v_username == $_SESSION['ROOT_USER'] && $api_status > 0) || ($v_username != $_SESSION['ROOT_USER'] && $api_status > 1)) { ?>
-				<a href="<?= tohtml($keys_url) ?>" class="button button-secondary js-button-create" title="<?= tohtml( _("Access Keys")) ?>">
-					<i class="fas fa-key icon-purple"></i><?= tohtml( _("Access Keys")) ?>
-				</a>
-			<?php } ?>
 		</div>
 		<div class="toolbar-buttons">
 			<button type="submit" class="button" form="main-form">
@@ -148,16 +122,6 @@
 					?>
 				</select>
 			</div>
-			<?php if ($v_username != "admin" && $_SESSION["userContext"] === "admin" && $_SESSION["user"] != $v_username): ?>
-				<div class="u-mb10">
-					<label for="v_role" class="form-label"><?= tohtml( _("Role")) ?></label>
-					<select class="form-select" name="v_role" id="v_role" required>
-						<option value="user"><?= tohtml( _("User")) ?></option>
-						<option value="admin" <?= tohtml($v_role == "admin" ? "selected" : "") ?>><?= tohtml( _("Administrator")) ?></option>
-						<option value="dns-cluster" <?= tohtml($v_role == "dns-cluster" ? "selected" : "") ?>><?= tohtml( _("DNS Sync User")) ?></option>
-					</select>
-				</div>
-			<?php endif; ?>
 			<?php if ($_SESSION["POLICY_USER_CHANGE_THEME"] !== "no") { ?>
 			<div class="u-mb10">
 				<label for="v_user_theme" class="form-label"><?= tohtml( _("Theme")) ?></label>
@@ -184,77 +148,6 @@
 						<option value='name' <?php if ($v_sort_order === 'name') echo 'selected' ?>><?= tohtml( _("Name")) ?></option>
 					</select>
 				</div>
-			<?php if ($_SESSION['userContext'] === 'admin') { ?>
-				<div class="u-mb20">
-					<label for="v_package" class="form-label"><?= tohtml( _("Package")) ?></label>
-					<select class="form-select" name="v_package" id="v_package" required>
-						<?php
-							foreach ($packages as $key => $value) {
-								echo "\n\t\t\t\t\t\t\t\t\t<option value=\"".htmlentities($key)."\"";
-								$skey = "'".$key."'";
-								if (( $key == $v_package ) || ( $skey == $v_package)){
-									echo 'selected' ;
-								}
-								echo ">".htmlentities($key)."</option>\n";
-							}
-						?>
-					</select>
-				</div>
-				<div class="u-mb20">
-					<button x-on:click="showAdvanced = !showAdvanced" type="button" class="button button-secondary">
-						<?= tohtml( _("Advanced Options")) ?>
-					</button>
-				</div>
-				<div x-cloak x-show="showAdvanced">
-					<div class="u-mb10">
-						<label for="v_shell" class="form-label"><?= tohtml( _("SSH Access")) ?></label>
-						<select class="form-select" name="v_shell" id="v_shell">
-							<?php
-								foreach ($shells as $key => $value) {
-									echo "\t\t\t\t<option value=\"".htmlentities($value)."\"";
-									$svalue = "'".$value."'";
-									if (( $value == $v_shell ) || ($svalue == $v_shell )){
-										echo 'selected' ;
-									}
-									echo ">".htmlentities($value)."</option>\n";
-								}
-							?>
-						</select>
-					</div>
-					<div class="u-mb10">
-						<label for="v_phpcli" class="form-label"><?= tohtml( _("PHP CLI Version")) ?></label>
-						<select class="form-select" name="v_phpcli" id="v_phpcli">
-							<?php
-								foreach ($php_versions as $key => $value) {
-									$php = explode('-',$value);
-									echo "\t\t\t\t<option value=\"".$value."\"";
-									$svalue = "'".$value."'";
-									if ((!empty($v_phpcli)) && ( $value == $v_phpcli ) || ($svalue == $v_phpcli)){
-										echo ' selected' ;
-									}
-									if ((empty($v_phpcli)) && ($value == DEFAULT_PHP_VERSION)){
-										echo ' selected' ;
-									}
-									echo ">".htmlentities($value)."</option>\n";
-								}
-							?>
-						</select>
-					</div>
-					<?php if ((isset($_SESSION['DNS_SYSTEM'])) && (!empty($_SESSION['DNS_SYSTEM']))) { ?>
-						<p class="form-label u-mb10"><?= tohtml( _("Default Name Servers")) ?></p>
-						<div class="u-mb5">
-							<input type="text" class="form-control" name="v_ns1" value="<?= tohtml(trim($v_ns1, "'")) ?>">
-						</div>
-						<div class="u-mb5">
-							<input type="text" class="form-control" name="v_ns2" value="<?= tohtml(trim($v_ns2, "'")) ?>">
-						</div>
-						<?php require $_SERVER["HESTIA"] . "/web/templates/includes/extra-ns-fields.php"; ?>
-						<button type="button" class="form-link u-mt20 js-add-ns" <?php if ($v_ns8) echo 'style="display:none;"'; ?>>
-							<?= tohtml( _("Add Name Server")) ?>
-						</button>
-					<?php } ?>
-				</div>
-			<?php } ?>
 		</div>
 
 	</form>

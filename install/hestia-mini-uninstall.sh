@@ -5,12 +5,11 @@
 # Hestia-Mini Uninstaller
 #
 # Removes everything installed by hestia-mini-install.sh:
-# panel, mail stack, database engines, phpMyAdmin/phpPgAdmin,
-# file manager, sudoers, cron, system users, and - unless
-# --keep-data is given - all mail/database DATA as well.
+# panel, mail stack, webmail, sudoers, cron, system users, and - unless
+# --keep-data is given - all mail DATA as well.
 #
-# THIS IS DESTRUCTIVE. By default it deletes mail spools and
-# database contents. Use --keep-data to preserve them, or
+# THIS IS DESTRUCTIVE. By default it deletes mail spools.
+# Use --keep-data to preserve them, or
 # --dry-run to see what would happen without changing anything.
 #
 # ======================================================== #
@@ -54,11 +53,11 @@ while [ $# -gt 0 ]; do
 		--help | -h)
 			echo "Usage: $0 [options]"
 			echo "  --yes, -y          Non-interactive: skip the confirmation prompt"
-			echo "  --keep-data        Keep mail spools (/home/*/mail), MySQL/MariaDB and"
-			echo "                     PostgreSQL data directories, and user home directories."
+			echo "  --keep-data        Keep mail spools (/home/*/mail) and the admin"
+			echo "                     home directory."
 			echo "                     Panel config, packages, and code are still removed."
 			echo "  --keep-packages    Do not apt purge the underlying service packages"
-			echo "                     (exim4, dovecot, mariadb-server, postgresql, etc)."
+			echo "                     (exim4, dovecot, clamav-daemon, spamd, etc)."
 			echo "                     Only removes MiniPanel-specific config/data."
 			echo "  --dry-run          Print what would be removed without removing anything."
 			exit 0
@@ -140,7 +139,6 @@ echo
 echo -e "${YELLOW}This will remove:${NC}"
 echo "  - The panel (hestia, hestia-nginx, hestia-php, hestia-web-terminal, /usr/local/hestia)"
 echo "  - Exim, Dovecot, ClamAV, SpamAssassin configuration"
-echo "  - The File Manager"
 echo "  - The reverse-proxy nginx config, sudoers rule, and cron jobs"
 echo "  - The 'hestiaweb' and 'hestiamail' system users"
 if [ "$KEEP_DATA" = 'yes' ]; then
@@ -150,9 +148,9 @@ else
 	echo -e "    ${RED}WILL BE DELETED.${NC}"
 fi
 if [ "$KEEP_PACKAGES" = 'yes' ]; then
-	echo "  - Service packages (exim4, dovecot, mariadb-server, etc) will be LEFT INSTALLED."
+	echo "  - Service packages (exim4, dovecot, clamav, etc) will be LEFT INSTALLED."
 else
-	echo "  - Service packages (exim4, dovecot, clamav, mariadb-server, postgresql, etc) will be purged."
+	echo "  - Service packages (exim4, dovecot, clamav, spamd, etc) will be purged."
 fi
 echo
 echo "A log of this run will be written to: $LOG"
@@ -232,13 +230,6 @@ if [ -d "$HESTIA/data/users" ]; then
 fi
 
 #----------------------------------------------------------#
-#                    Remove File Manager                     #
-#----------------------------------------------------------#
-
-echo -e "\n[ * ] Removing File Manager..."
-run rm -rf "$HESTIA/web/fm"
-
-#----------------------------------------------------------#
 #             Remove nginx / PHP-FPM / sudoers / cron         #
 #----------------------------------------------------------#
 
@@ -267,6 +258,15 @@ if [ "$KEEP_PACKAGES" != 'yes' ]; then
 
 	pkgs_always="hestia hestia-nginx hestia-php hestia-web-terminal nodejs clamav-daemon clamav-freshclam spamd spamassassin exim4 exim4-base exim4-config exim4-daemon-heavy bsd-mailx dovecot-imapd dovecot-managesieved dovecot-pop3d dovecot-sieve"
 
+	# Only purge packages that are actually installed (ClamAV/SpamAssassin
+	# may have been skipped at install time)
+	pkgs_to_purge=""
+	for p in $pkgs_always; do
+		if dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "install ok installed"; then
+			pkgs_to_purge="$pkgs_to_purge $p"
+		fi
+	done
+
 	# Preseed debconf selections for unattended package purge
 	if command -v debconf-set-selections > /dev/null 2>&1; then
 		echo "exim4-base exim4/purge_spool boolean true" | debconf-set-selections 2>/dev/null || true
@@ -284,7 +284,11 @@ if [ "$KEEP_PACKAGES" != 'yes' ]; then
 		-o Dpkg::Options::="--force-confold"
 	)
 
-	run_apt "Purging panel, web, and mail packages" apt-get "${apt_opts[@]}" purge $pkgs_always
+	if [ -n "$pkgs_to_purge" ]; then
+		run_apt "Purging panel, web, and mail packages" apt-get "${apt_opts[@]}" purge $pkgs_to_purge
+	else
+		echo "  Nothing to purge: none of the managed packages are installed."
+	fi
 
 	run_apt "Removing unused dependencies (autoremove)" apt-get "${apt_opts[@]}" autoremove
 
@@ -352,7 +356,7 @@ else
 	echo "  MiniPanel has been uninstalled."
 	echo "  Log written to: $LOG"
 	if [ "$KEEP_DATA" = 'yes' ]; then
-		echo "  Data was preserved: mail spools, database contents, and user home"
+		echo "  Data was preserved: mail spools and the admin home"
 		echo "  directories were NOT removed."
 	fi
 fi

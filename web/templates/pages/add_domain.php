@@ -7,9 +7,7 @@
 			</a>
 		</div>
 		<div class="toolbar-buttons">
-			<?php if (($_SESSION["role"] == "admin" && $accept === "true") || $user_plain !== "admin") { ?>
 				<button type="submit" class="button" form="main-form">
-					<i class="fas fa-floppy-disk icon-purple"></i><?= tohtml( _("Save")) ?>
 				</button>
 			<?php } ?>
 		</div>
@@ -30,26 +28,6 @@
 		<div class="form-container">
 			<h1 class="u-mb20"><?= tohtml( _("Add Domain")) ?></h1>
 			<?php show_alert_message($_SESSION); ?>
-			<?php if ($_SESSION["role"] == "admin" && $accept !== "true") { ?>
-				<div class="alert alert-danger" role="alert">
-					<i class="fas fa-exclamation"></i>
-						<p><?= htmlify_trans(
-     	sprintf(
-     		_("It is strongly advised to {create a standard user account} before adding %s to the server due to the increased privileges the admin account possesses and potential security risks."),
-     		_("a domain"),
-     	),
-     	"</a>",
-     	'<a href="/add/user/">',
-     ) ?></p>
-				</div>
-			<?php } ?>
-			<?php if ($_SESSION["role"] == "admin" && empty($accept)) { ?>
-				<div class="u-side-by-side u-mt20">
-					<a href="/add/user/" class="button u-width-full u-mr10"><?= tohtml( _("Add User")) ?></a>
-					<a href="/add/domain/?<?= tohtml(http_build_query(["accept" => 'true'])) ?>" class="button button-danger u-width-full u-ml10"><?= tohtml( _("Continue")) ?></a>
-				</div>
-			<?php } ?>
-			<?php if (($_SESSION["role"] == "admin" && $accept === "true") || $_SESSION["role"] !== "admin") { ?>
 				<div class="u-mb20">
 					<label for="v_domain" class="form-label"><?= tohtml( _("Domain Name")) ?></label>
 					<input type="text" class="form-control" name="v_domain" id="v_domain" value="<?= tohtml(trim($v_domain, "'")) ?>" required>
@@ -86,7 +64,6 @@
 						<option value="yes" <?php if ($v_ssl == 'yes') echo 'selected'; ?>><?= tohtml( _("Yes")) ?></option>
 					</select>
 				</div>
-			<?php } ?>
 		</div>
 
 	</form>

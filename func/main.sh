@@ -343,45 +343,6 @@ is_type_valid() {
 	fi
 }
 
-# Check user backup settings
-is_backup_enabled() {
-	BACKUPS=$(grep "^BACKUPS=" $USER_DATA/user.conf | cut -f2 -d \')
-	if [ -z "$BACKUPS" ] || [[ "$BACKUPS" -le '0' ]]; then
-		check_result "$E_DISABLED" "user backup is disabled"
-	fi
-}
-
-is_incremental_backup_enabled() {
-	BACKUPS_INCREMENTAL=$(grep "^BACKUPS_INCREMENTAL=" $USER_DATA/user.conf | cut -f2 -d \')
-	if [ -z "$BACKUPS_INCREMENTAL" ] || [[ "$BACKUPS_INCREMENTAL" != "yes" ]]; then
-		check_result "$E_DISABLED" "incremental backups are disabled"
-	fi
-}
-
-# Check user backup settings
-is_backup_scheduled() {
-	if [ -e "$HESTIA/data/queue/backup.pipe" ]; then
-		check_q=$(grep " $user " $HESTIA/data/queue/backup.pipe | grep $1)
-		if [ -n "$check_q" ]; then
-			check_result "$E_EXISTS" "$1 is already scheduled"
-		fi
-	fi
-}
-
-# Check if object is new
-is_object_new() {
-	if [ $2 = 'USER' ]; then
-		if [ -d "$USER_DATA" ]; then
-			object="OK"
-		fi
-	else
-		object=$(grep "$2='$3'" $USER_DATA/$1.conf)
-	fi
-	if [ -n "$object" ]; then
-		check_result "$E_EXISTS" "$2=$3 already exists"
-	fi
-}
-
 # Check if object is valid
 is_object_valid() {
 	if [ $2 = 'USER' ]; then
@@ -829,55 +790,10 @@ recalc_user_bandwidth_usage() {
 }
 
 # Get next cron job id
-get_next_cronjob() {
-	if [ -z "$job" ]; then
-		curr_str=$(grep "JOB=" $USER_DATA/cron.conf | cut -f 2 -d \' \
-			| sort -n | tail -n1)
-		job="$((curr_str + 1))"
-	fi
-}
 
 # Sort cron jobs by id
-sort_cron_jobs() {
-	sort -n -k 2 -t \' $USER_DATA/cron.conf > $USER_DATA/cron.tmp
-	mv -f $USER_DATA/cron.tmp $USER_DATA/cron.conf
-}
 
 # Sync cronjobs with system cron
-sync_cron_jobs() {
-	source_conf "$USER_DATA/user.conf"
-	if [ -e "/var/spool/cron/crontabs" ]; then
-		crontab="/var/spool/cron/crontabs/$user"
-	else
-		crontab="/var/spool/cron/$user"
-	fi
-
-	# remove file if exists
-	if [ -e "$crontab" ]; then
-		rm -f $crontab
-	fi
-
-	# touch new crontab file
-	touch $crontab
-
-	if [ "$CRON_REPORTS" = 'yes' ]; then
-		echo "MAILTO=$CONTACT" > $crontab
-		echo 'CONTENT_TYPE="text/plain; charset=utf-8"' >> $crontab
-	else
-		echo 'MAILTO=""' > $crontab
-	fi
-
-	while IFS= read -r line; do
-		parse_object_kv_list "$line"
-		if [ "$SUSPENDED" = 'no' ]; then
-			echo "$MIN $HOUR $DAY $MONTH $WDAY $CMD" \
-				| sed -e "s/%quote%/'/g" -e "s/%dots%/:/g" \
-					>> $crontab
-		fi
-	done < $USER_DATA/cron.conf
-	chown $user:$user $crontab
-	chmod 600 $crontab
-}
 
 # Validates Local part email and mail alias
 is_localpart_format_valid() {
@@ -983,34 +899,11 @@ is_ip_format_valid() {
 }
 
 # IPv6 format validator
-is_ipv6_format_valid() {
-	object_name=${2-ipv6}
-	valid=$($HESTIA_PHP -r '$ip=$argv[1]; echo (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) ? 0 : 1);' "$1")
-	if [ "$valid" -ne 0 ]; then
-		check_result "$E_INVALID" "invalid $object_name :: $1"
-	fi
-}
 
 is_ip46_format_valid() {
 	valid=$($HESTIA_PHP -r '$ip=$argv[1]; echo (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6) ? 0 : 1);' "$1")
 	if [ "$valid" -ne 0 ]; then
 		check_result "$E_INVALID" "invalid IP format :: $1"
-	fi
-}
-
-is_ipv4_cidr_format_valid() {
-	object_name=${2-ip}
-	valid=$($HESTIA_PHP -r '[$ip, $net] = [...explode("/", $argv[1]), "32"]; echo (preg_match("/^(\d{1,3}\.){3}\d{1,3}$/", $ip) && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && is_numeric($net) && $net >= 0 && $net <= 32) ? 0 : 1;' "$1")
-	if [ "$valid" -ne 0 ]; then
-		check_result "$E_INVALID" "invalid $object_name :: $1"
-	fi
-}
-
-is_ipv6_cidr_format_valid() {
-	object_name=${2-ipv6}
-	valid=$($HESTIA_PHP -r '$cidr=$argv[1]; list($ip, $netmask) = [...explode("/", $cidr), 128]; echo ((filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) && $netmask <= 128) ? 0 : 1);' "$1")
-	if [ "$valid" -ne 0 ]; then
-		check_result "$E_INVALID" "invalid $object_name :: $1"
 	fi
 }
 
@@ -1023,13 +916,6 @@ is_netmask_format_valid() {
 }
 
 # Proxy extention format validator
-is_extention_format_valid() {
-	exclude="[!|#|$|^|&|(|)|+|=|{|}|:|@|<|>|?|/|\|\"|'|;|%|\`| ]"
-	if [[ "$1" =~ $exclude ]]; then
-		check_result "$E_INVALID" "invalid proxy extention format :: $1"
-	fi
-	is_no_new_line_format "$1"
-}
 
 # Number format validator
 is_number_format_valid() {
@@ -1054,11 +940,6 @@ is_boolean_format_valid() {
 }
 
 # Refresh IPset format validator
-is_refresh_ipset_format_valid() {
-	if [ "$1" != 'load' ] && [ "$1" != 'yes' ] && [ "$1" != 'no' ]; then
-		check_result "$E_INVALID" "invalid $2 format :: $1"
-	fi
-}
 
 # Common format validator
 is_common_format_valid() {
@@ -1172,122 +1053,12 @@ is_no_new_line_format() {
 	fi
 }
 
-is_string_format_valid() {
-	exclude="[!|#|$|^|&|(|)|+|=|{|}|:|<|>|?|/|\|\"|'|;|%|\`]"
-	if [[ "$1" =~ $exclude ]]; then
-		check_result "$E_INVALID" "invalid $2 format :: $1"
-	fi
-	is_no_new_line_format "$1"
-}
-is_cron_command_valid_format() {
-	if [[ "$1" == *'`'* ]] || [[ "$1" != "${1//$'\n'/}" ]]; then
-		check_result "$E_INVALID" "Invalid cron command format"
-	fi
-}
-
-
-# Date format validator
-is_date_format_valid() {
-	if ! [[ "$1" =~ ^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$ ]]; then
-		check_result "$E_INVALID" "invalid date format :: $1"
-	fi
-}
-
-# Database user validator
-is_dbuser_format_valid() {
-	exclude="[!|@|#|$|^|&|*|(|)|+|=|{|}|:|,|<|>|?|/|\|\"|'|;|%|\`| ]"
-	if [ 33 -le ${#1} ]; then
-		check_result "$E_INVALID" "mysql username can be up to 32 characters long"
-	fi
-	if [[ "$1" =~ $exclude ]]; then
-		check_result "$E_INVALID" "invalid $2 format :: $1"
-	fi
-	is_no_new_line_format "$1"
-}
-
-# DNS record type validator
-is_dns_type_format_valid() {
-	is_valid=$(
-		$HESTIA_PHP -- "$1" << 'EOPHP'
-	<?php
-	$type = $argv[1];
-	$known_types = array("A","AAAA","NS","CNAME","MX","TXT","SRV","DNSKEY",
-	"KEY","IPSECKEY","PTR","SPF","TLSA","CAA","DS");
-	echo in_array($type, $known_types, true) ? "0" : "1";
-EOPHP
-	)
-	if [ "$is_valid" -ne 0 ]; then
-		check_result "$E_INVALID" "invalid dns record type format :: $1"
-	fi
-}
-
-# DNS record validator
-is_dns_record_format_valid() {
-	is_no_new_line_format "$1"
-
-	json_from_php=$(
-		$HESTIA_PHP "$HESTIA/func/internal/dns_record_validator.php" "$1" "$rtype" "$priority"
-	)
-	check_result $? "dns record validation failed :: $1" "$E_INVALID"
-
-	is_valid=$(jq -er '.valid' <<< "$json_from_php")
-	if [ $? -ne 0 ]; then
-		check_result "$E_INVALID" "dns record validation failed :: $1"
-	fi
-	if [ "$is_valid" != 'true' ]; then
-		error_message=$(jq -r '.error_message // "invalid dns record format"' <<< "$json_from_php")
-		check_result "$E_INVALID" "$error_message :: $1"
-	fi
-	cleaned_record=$(jq -r '.cleaned_record // empty' <<< "$json_from_php")
-	if [ -n "$cleaned_record" ]; then
-		dvalue="$cleaned_record"
-	fi
-	updated_priority=$(jq -r '.new_priority // empty' <<< "$json_from_php")
-	if [ -n "$updated_priority" ]; then
-		priority="$updated_priority"
-	fi
-}
-
 # Email format validator
 is_email_format_valid() {
 	if [[ ! "$1" =~ ^[A-Za-z0-9._%+-]+@[[:alnum:].-]+\.[A-Za-z]{2,63}$ ]]; then
 		if [[ ! "$1" =~ ^[A-Za-z0-9._%+-]+@[[:alnum:].-]+\.(xn--)[[:alnum:]]{2,63}$ ]]; then
 			check_result "$E_INVALID" "invalid email format :: $1"
 		fi
-	fi
-}
-
-# Firewall action validator
-is_fw_action_format_valid() {
-	if [ "$1" != "ACCEPT" ] && [ "$1" != 'DROP' ]; then
-		check_result "$E_INVALID" "invalid action format :: $1"
-	fi
-}
-
-# Firewall protocol validator
-is_fw_protocol_format_valid() {
-	if [ "$1" != "ICMP" ] && [ "$1" != 'UDP' ] && [ "$1" != 'TCP' ]; then
-		check_result "$E_INVALID" "invalid protocol format :: $1"
-	fi
-}
-
-# Firewall port validator
-is_fw_port_format_valid() {
-	if [ "${#1}" -eq 1 ]; then
-		if ! [[ "$1" =~ [0-9] ]]; then
-			check_result "$E_INVALID" "invalid port format :: $1"
-		fi
-	else
-		if ! [[ "$1" =~ ^[0-9][-|,|:|0-9]{0,76}[0-9]$ ]]; then
-			check_result "$E_INVALID" "invalid port format and/or more than 78 chars used :: $1"
-		fi
-	fi
-}
-
-# DNS record id validator
-is_id_format_valid() {
-	if ! echo "$1" | grep -qE '^[1-9][0-9]{0,}$'; then
-		check_result "$E_INVALID" "invalid $2 format :: $1"
 	fi
 }
 
@@ -1310,119 +1081,6 @@ is_interface_format_valid() {
 is_ip_status_format_valid() {
 	if [ -z "$(echo shared,dedicated | grep -w "$1")" ]; then
 		check_result "$E_INVALID" "invalid status format :: $1"
-	fi
-}
-
-# Comment validator
-is_comment_format_valid() {
-	if ! [[ "$1" =~ ^[[:alnum:]][[:alnum:][:space:]._-]{0,64}[[:alnum:]]$ ]]; then
-		check_result "$E_INVALID" "invalid $2 format :: $1"
-	fi
-}
-
-# User notification topic validator - plain text, single line only.
-# Rendered client-side with Alpine's x-text, but line breaks would still
-# corrupt the flat-file notifications.conf format, so they're rejected here.
-is_notification_topic_valid() {
-	local str="$1"
-
-	if [[ "$str" == *$'\n'* ]] || [[ "$str" == *$'\r'* ]]; then
-		check_result "$E_INVALID" "invalid topic format :: line breaks are not allowed"
-	fi
-	if [ ${#str} -gt 255 ]; then
-		check_result "$E_INVALID" "invalid topic format :: too long"
-	fi
-}
-
-# User notification body validator. NOTICE is rendered client-side with
-# Alpine's x-html (raw HTML), and its actual sanitization is done by
-# func/internal/sanitize_html.php (Symfony HtmlSanitizer allow-list) before
-# it's stored. This just guards the flat-file notifications.conf format,
-# which breaks if a value spans multiple lines or is unreasonably large.
-is_notification_notice_valid() {
-	local str="$1"
-
-	if [[ "$str" == *$'\n'* ]] || [[ "$str" == *$'\r'* ]]; then
-		check_result "$E_INVALID" "invalid notice format :: line breaks are not allowed"
-	fi
-	if [ ${#str} -gt 4000 ]; then
-		check_result "$E_INVALID" "invalid notice format :: too long"
-	fi
-}
-
-# Cron validator
-is_cron_format_valid() {
-	limit=59
-	check_format=''
-	if [ "$2" = 'hour' ]; then
-		limit=23
-	fi
-
-	if [ "$2" = 'day' ]; then
-		limit=31
-	fi
-	if [ "$2" = 'month' ]; then
-		limit=12
-	fi
-	if [ "$2" = 'wday' ]; then
-		limit=7
-	fi
-	if [ "$1" = '*' ]; then
-		check_format='ok'
-	fi
-	if [[ "$1" =~ ^[\*]+[/]+[0-9] ]]; then
-		if [ "$(echo $1 | cut -f 2 -d /)" -lt $limit ]; then
-			check_format='ok'
-		fi
-	fi
-	if [[ "$1" =~ ^[0-9][-|,|0-9]{0,70}[\/][0-9]$ ]]; then
-		check_format='ok'
-		crn_values=${1//,/ }
-		crn_values=${crn_values//-/ }
-		crn_values=${crn_values//\// }
-		for crn_vl in $crn_values; do
-			if [ "$crn_vl" -gt $limit ]; then
-				check_format='invalid'
-			fi
-		done
-	fi
-	crn_values=$(echo $1 | tr "," " " | tr "-" " ")
-	for crn_vl in $crn_values; do
-		if [[ "$crn_vl" =~ ^[0-9]+$ ]] && [ "$crn_vl" -le $limit ]; then
-			check_format='ok'
-		fi
-	done
-	if [ "$check_format" != 'ok' ]; then
-		check_result "$E_INVALID" "invalid $2 format :: $1"
-	fi
-}
-
-# Validate CPU Quota:
-is_valid_cpu_quota() {
-	local cpu_quota="$1"
-	if [[ ! "$cpu_quota" =~ ^[1-9][0-9]*%$ ]]; then
-		check_result "$E_INVALID" "Invalid CPU Quota format: $cpu_quota"
-	fi
-}
-
-# Validate CPU Quota Period:
-is_valid_cpu_quota_period() {
-	if [[ ! "$1" =~ ^[0-9]+(ms|s)$ ]]; then
-		check_result "$E_INVALID" "Invalid CPU Quota Period format :: $1"
-	fi
-}
-
-# Validate Memory Size:
-is_valid_memory_size() {
-	if [[ ! "$1" =~ ^[0-9]+[KMGTK]?$ ]]; then
-		check_result "$E_INVALID" "Invalid Memory Size format :: $1"
-	fi
-}
-
-# Validate Swap Size:
-is_valid_swap_size() {
-	if [[ ! "$1" =~ ^[0-9]+[KMGTK]?$ ]]; then
-		check_result "$E_INVALID" "Invalid Swap Size format :: $1"
 	fi
 }
 
@@ -1478,112 +1136,50 @@ is_service_format_valid() {
 	fi
 }
 
-is_hash_format_valid() {
-	if ! [[ "$1" =~ ^[[:alnum:]|\:|\=|_|-]{1,80}$ ]]; then
-		check_result "$E_INVALID" "invalid $2 format :: $1"
-	fi
-}
-
 # Format validation controller
 is_format_valid() {
 	for arg_name in $*; do
 		arg="${!arg_name}"
 		if [ -n "$arg" ]; then
 			case $arg_name in
-				access_key_id) is_access_key_id_format_valid "$arg" "$arg_name" ;;
 				account) is_localpart_format_valid "$arg" "$arg_name" '64' ;;
-				action) is_fw_action_format_valid "$arg" ;;
 				active) is_boolean_format_valid "$arg" 'active' ;;
 				aliases) is_alias_format_valid "$arg" ;;
-				alias) is_alias_format_valid "$arg" ;;
 				antispam) is_boolean_format_valid "$arg" 'antispam' ;;
 				antivirus) is_boolean_format_valid "$arg" 'antivirus' ;;
 				autoreply) is_autoreply_format_valid "$arg" ;;
-				backup) is_object_format_valid "$arg" 'backup' ;;
-				charset) is_object_format_valid "$arg" "$arg_name" ;;
-				charsets) is_common_format_valid "$arg" 'charsets' ;;
-				chain) is_object_format_valid "$arg" 'chain' ;;
-				comment) is_comment_format_valid "$arg" 'comment' ;;
-				cron_command) is_cron_command_valid_format "$arg" ;;
-				database) is_database_format_valid "$arg" 'database' ;;
-				day) is_cron_format_valid "$arg" $arg_name ;;
-				dbpass) is_password_format_valid "$arg" ;;
-				dbuser) is_dbuser_format_valid "$arg" 'dbuser' ;;
 				dkim) is_boolean_format_valid "$arg" 'dkim' ;;
 				dkim_size) is_int_format_valid "$arg" ;;
 				domain) is_domain_format_valid "$arg" ;;
-				dom_alias) is_alias_format_valid "$arg" ;;
-				dvalue) is_dns_record_format_valid "$arg" ;;
 				email) is_email_format_valid "$arg" ;;
 				email_forward) is_email_format_valid "$arg" ;;
-				exp) is_date_format_valid "$arg" ;;
-				extentions) is_common_format_valid "$arg" 'extentions' ;;
 				format) is_type_valid 'plain json shell csv' "$arg" ;;
-				ftp_password) is_password_format_valid "$arg" ;;
-				ftp_user) is_user_format_valid "$arg" "$arg_name" ;;
-				hash) is_hash_format_valid "$arg" "$arg_name" ;;
 				host) is_object_format_valid "$arg" "$arg_name" ;;
-				hour) is_cron_format_valid "$arg" $arg_name ;;
-				id) is_id_format_valid "$arg" 'id' ;;
 				iface) is_interface_format_valid "$arg" ;;
 				ip) is_ip_format_valid "$arg" ;;
-				ipv6) is_ipv6_format_valid "$arg" ;;
 				ip46) is_ip46_format_valid "$arg" ;;
-				ipv4_cidr) is_ipv4_cidr_format_valid "$arg" ;;
-				ipv6_cidr) is_ipv6_cidr_format_valid "$arg" ;;
 				ip_name) is_domain_format_valid "$arg" 'IP name' ;;
 				ip_status) is_ip_status_format_valid "$arg" ;;
-				job) is_int_format_valid "$arg" 'job' ;;
 				key) is_common_format_valid "$arg" "$arg_name" ;;
 				malias) is_localpart_format_valid "$arg" "$arg_name" '64' ;;
-				max_db) is_int_format_valid "$arg" 'max db' ;;
-				min) is_cron_format_valid "$arg" $arg_name ;;
-				month) is_cron_format_valid "$arg" $arg_name ;;
 				name) is_name_format_valid "$arg" "name" ;;
 				nat_ip) is_ip_format_valid "$arg" ;;
 				netmask) is_netmask_format_valid "$arg" 'netmask' ;;
-				newid) is_int_format_valid "$arg" 'id' ;;
-				notice) is_notification_notice_valid "$arg" ;;
-				ns1) is_domain_format_valid "$arg" 'ns1' ;;
-				ns2) is_domain_format_valid "$arg" 'ns2' ;;
-				ns3) is_domain_format_valid "$arg" 'ns3' ;;
-				ns4) is_domain_format_valid "$arg" 'ns4' ;;
-				ns5) is_domain_format_valid "$arg" 'ns5' ;;
-				ns6) is_domain_format_valid "$arg" 'ns6' ;;
-				ns7) is_domain_format_valid "$arg" 'ns7' ;;
-				ns8) is_domain_format_valid "$arg" 'ns8' ;;
 				object) is_object_name_format_valid "$arg" 'object' ;;
 				package) is_object_format_valid "$arg" "$arg_name" ;;
 				password) is_password_format_valid "$arg" ;;
-				priority) is_int_format_valid $arg ;;
 				port) is_int_format_valid "$arg" 'port' ;;
-				port_ext) is_fw_port_format_valid "$arg" ;;
-				protocol) is_fw_protocol_format_valid "$arg" ;;
-				proxy_ext) is_extention_format_valid "$arg" ;;
 				quota) is_int_format_valid "$arg" 'quota' ;;
 				rate) is_int_format_valid "$arg" 'rate' ;;
-				record) is_common_format_valid "$arg" 'record' ;;
 				reject) is_boolean_format_valid "$arg" 'reject' ;;
 				restart) is_restart_format_valid "$arg" 'restart' ;;
 				role) is_role_valid "$arg" 'role' ;;
-				rtype) is_dns_type_format_valid "$arg" ;;
-				rule) is_int_format_valid "$arg" "rule id" ;;
 				service) is_service_format_valid "$arg" "$arg_name" ;;
-				secret_access_key) is_secret_access_key_format_valid "$arg" "$arg_name" ;;
-				snapshot) is_object_format_valid "$arg" 'snapshot' ;;
-				soa) is_domain_format_valid "$arg" 'SOA' ;;
 				#missing command: is_format_valid_shell
 				shell) is_format_valid_shell "$arg" ;;
 				ssl_dir) is_folder_exists "$arg" "$arg_name" ;;
-				stats_pass) is_password_format_valid "$arg" ;;
-				stats_user) is_user_format_valid "$arg" "$arg_name" ;;
-				template) is_object_format_valid "$arg" "$arg_name" ;;
 				theme) is_common_format_valid "$arg" "$arg_name" ;;
-				topic) is_notification_topic_valid "$arg" ;;
-				ttl) is_int_format_valid "$arg" 'ttl' ;;
 				user) is_user_format_valid "$arg" $arg_name ;;
-				wday) is_cron_format_valid "$arg" $arg_name ;;
-				value) is_common_format_valid "$arg" $arg_name ;;
 			esac
 		fi
 	done
@@ -1595,33 +1191,10 @@ is_folder_exists() {
 	fi
 }
 
-is_command_valid_format() {
-	if [[ ! "$1" =~ ^v-[[:alnum:]][-|\.|_[:alnum:]]{0,64}[[:alnum:]]$ ]]; then
-		check_result "$E_INVALID" "Invalid command format"
-	fi
-	if [[ -n $(echo "$1" | grep -e '\-\-') ]]; then
-		check_result "$E_INVALID" "Invalid command format"
-	fi
-}
 # Check access_key_id name
 # Don't work with legacy key format
-is_access_key_id_format_valid() {
-	local hash="$1"
-
-	# ACCESS_KEY_ID format validation
-	if ! [[ "$hash" =~ ^[[:alnum:]]{20}$ ]]; then
-		check_result "$E_INVALID" "invalid $2 format :: $hash"
-	fi
-}
 
 # SECRET_ACCESS_KEY format validation
-is_secret_access_key_format_valid() {
-	local hash="$1"
-
-	if ! [[ "$hash" =~ ^[[:alnum:]|_|\.|\+|/|\^|~|=|%|\-]{40}$ ]]; then
-		check_result "$E_INVALID" "invalid $2 format"
-	fi
-}
 
 # Checks if the secret belongs to the access key
 check_access_key_secret() {
@@ -1919,6 +1492,14 @@ format_no_quotes() {
 	exclude="['|\"]"
 	if [[ "$1" =~ $exclude ]]; then
 		check_result "$E_INVALID" "Invalid $2 contains qoutes (\" or ' or | ) :: $1"
+	fi
+	is_no_new_line_format "$1"
+}
+
+is_string_format_valid() {
+	exclude="[!|#|$|^|&|(|)|+|=|{|}|:|<|>|?|/|\|\"|'|;|%|\`]"
+	if [[ "$1" =~ $exclude ]]; then
+		check_result "$E_INVALID" "invalid $2 format :: $1"
 	fi
 	is_no_new_line_format "$1"
 }

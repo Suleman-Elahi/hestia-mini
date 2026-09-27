@@ -168,22 +168,6 @@
 					<div x-cloak x-show="open" x-on:click.outside="open = false" class="top-bar-menu-panel">
 						<ul class="top-bar-menu-list">
 
-							<!-- File Manager -->
-							<?php if (isset($_SESSION["FILE_MANAGER"]) && !empty($_SESSION["FILE_MANAGER"]) && $_SESSION["FILE_MANAGER"] == "true") { ?>
-								<?php if ($_SESSION["userContext"] === "admin" && $_SESSION["look"] === "admin" && $_SESSION["POLICY_SYSTEM_PROTECTED_ADMIN"] == "yes") { ?>
-									<!-- Hide file manager when impersonating admin-->
-								<?php } else { ?>
-									<li class="top-bar-menu-item">
-										<a title="<?= _("File manager") ?>" class="top-bar-menu-link <?php if ($TAB == "FM") {
-	echo "active";
-} ?>" href="/fm/">
-											<i class="fas fa-folder-open"></i>
-											<span class="top-bar-menu-link-label u-hide-desktop"><?= _("File manager") ?></span>
-										</a>
-									</li>
-								<?php } ?>
-							<?php } ?>
-
 							<!-- Web Terminal -->
 							<?php if (isset($_SESSION["WEB_TERMINAL"]) && !empty($_SESSION["WEB_TERMINAL"]) && $_SESSION["WEB_TERMINAL"] == "true") { ?>
 								<?php if ($_SESSION["userContext"] === "admin" && $_SESSION["look"] === "admin" && $_SESSION["POLICY_SYSTEM_PROTECTED_ADMIN"] == "yes") { ?>
@@ -201,17 +185,6 @@
 							<?php } ?>
 
 							<!-- Edit User -->
-							<?php if ($_SESSION["userContext"] === "admin" && ($_SESSION["look"] !== "" && $user == "admin")) { ?>
-								<!-- Hide 'edit user' entry point from other administrators for default 'admin' account-->
-								<li class="top-bar-menu-item">
-									<a title="<?= _("Logs") ?>" class="top-bar-menu-link <?php if ($TAB == "LOG") {
-	echo "active";
-} ?>" href="/list/log/">
-										<i class="fas fa-clock-rotate-left"></i>
-										<span class="top-bar-menu-link-label u-hide-desktop"><?= _("Logs") ?></span>
-									</a>
-								</li>
-							<?php } else { ?>
 								<?php if ($panel[$user]["SUSPENDED"] === "no") { ?>
 									<li class="top-bar-menu-item">
 										<a title="<?= htmlspecialchars($user) ?> (<?= htmlspecialchars($panel[$user]["NAME"]) ?>)" class="top-bar-menu-link" href="/edit/user/?user=<?= $user ?>&token=<?= $_SESSION["token"] ?>">
@@ -220,7 +193,6 @@
 										</a>
 									</li>
 								<?php } ?>
-							<?php } ?>
 
 							<?php if ($_SESSION["HIDE_DOCS"] !== "yes") { ?>
 								<!-- Help / Documentation -->
@@ -269,30 +241,6 @@
 				</span>
 			</button>
 			<ul x-cloak x-show="open" class="main-menu-list">
-
-				<!-- Users tab -->
-				<?php if ($_SESSION["userContext"] == "admin" && $_SESSION["look"] === "") { ?>
-					<?php if ($_SESSION["user"] !== "admin" && $_SESSION["POLICY_SYSTEM_HIDE_ADMIN"] === "yes") {
-     	$user_count = $panel[$user]["U_USERS"] - 1;
-     } else {
-     	$user_count = $panel[$user]["U_USERS"];
-     } ?>
-					<li class="main-menu-item">
-						<a class="main-menu-item-link <?php if (in_array($TAB, ["USER", "LOG"])) {
-      	echo "active";
-      } ?>" href="/list/user/" title="<?= _("Users") ?>: <?= $user_count ?>&#13;<?= _("Suspended") ?>: <?= $panel[$user]["SUSPENDED_USERS"] ?>">
-							<p class="main-menu-item-label"><?= _("USER") ?><i class="fas fa-users"></i></p>
-							<ul class="main-menu-stats">
-								<li>
-									<?= _("Users") ?>: <?= htmlspecialchars($user_count) ?>
-								</li>
-								<li>
-									<?= _("Suspended") ?>: <?= $panel[$user]["SUSPENDED_USERS"] ?>
-								</li>
-							</ul>
-						</a>
-					</li>
-				<?php } ?>
 
 				<!-- Mail tab -->
 				<?php if (isset($_SESSION["MAIL_SYSTEM"]) && !empty($_SESSION["MAIL_SYSTEM"])) { ?>

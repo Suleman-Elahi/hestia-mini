@@ -62,7 +62,7 @@ fi
 
 # Update language for all existing users if specified
 if [ "$update_users" = "yes" ]; then
-	for user in $("$BIN/v-list-users" list); do
+	for user in "$ROOT_USER"; do
 		$BIN/v-change-user-language "$user" "$language"
 	done
 fi

@@ -1,14 +1,14 @@
 # Hestia-Mini
 
 A lightweight, standalone admin panel derived from [HestiaCP](https://github.com/hestiacp/hestiacp),
-supporting four focused feature areas: **Email**, **Domain Management**,
-**File Management**, and **Terminal**.
+supporting three focused feature areas: **Email**, **Domain Management**,
+and **Terminal** — with a single `admin` user (no multi-user management).
 
 Hestia-Mini keeps HestiaCP's battle-tested core — its CLI command surface, shell
 function library, and the PHP web UI — while removing everything unrelated to
-mail, domain management, file manager, and terminal: no web-hosting
+mail, domain management, and terminal: no web-hosting
 (Apache/PHP-FPM vhosts), no database management, no DNS server, no FTP, no
-firewall rule management, no backups, no cron UI, and no app marketplace.
+file manager, no firewall rule management, no backups, no cron UI, and no app marketplace.
 
 > **Attribution & License:** Hestia-Mini is derived from HestiaCP and is
 > distributed under the GNU General Public License v3. See
@@ -25,17 +25,17 @@ firewall rule management, no backups, no cron UI, and no app marketplace.
   reverse proxying and load balancing (round_robin, weighted, least_conn,
   ip_hash, hash). Supports multiple backend targets per domain and optional
   Let's Encrypt SSL.
-- **File Manager** — browser-based file management (Filegator).
-- **Terminal** — web terminal (xterm.js over WebSocket) and SSH shell access.
-- **CLI-first** — a large `v-*` command suite under `bin/` for scripting and
-  automation, plus a JSON API and shell API.
-- **User & access management** — users, packages, roles, two-factor
-  authentication, SSH/SFTP keys, notifications, and an API-key system.
+- **Terminal** — web terminal (xterm.js over WebSocket) for the admin shell.
+- **CLI-first** — a focused `v-*` command suite under `bin/` for scripting and
+  automation, plus a JSON API.
+- **Single admin** — one `admin` user with password/contact/language/theme
+  settings and two-factor authentication. No user list, packages, roles,
+  SSH/SFTP keys, notifications, or API-key management.
 
 ### Explicitly not included
 
 Apache, PHP-FPM web-hosting pools, BIND/named (DNS server), MySQL/MariaDB,
-PostgreSQL, iptables/fail2ban rule sets, FTP servers, vhost templates,
+PostgreSQL, iptables/fail2ban rule sets, FTP servers, file manager, vhost templates,
 per-domain Let's Encrypt automation, cron UI, backup UI, and the quick-install
 app marketplace.
 
@@ -67,14 +67,15 @@ sudo bash install/hestia-mini-install.sh
 
 *(Note: `install/minipanel-install.sh` is provided as a backward-compatible symlink)*
 
-The installer is non-intrusive by default and automates admin-user creation
-and the file manager. Common flags:
+The installer is non-intrusive by default and creates the single `admin`
+user. Common flags:
 
 ```
 --yes, -y             Assume yes to all prompts (non-interactive)
 --purge-mta           Purge a conflicting stub MTA on port 25
 --no-purge-mta        Never purge, just warn
---no-filemanager      Skip installing the File Manager
+--no-antivirus        Skip installing ClamAV antivirus for mail
+--no-antispam         Skip installing SpamAssassin antispam for mail
 --admin-email EMAIL   Admin contact email
 --admin-password PASS Admin password
 ```

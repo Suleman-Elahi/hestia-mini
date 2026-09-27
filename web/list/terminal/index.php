@@ -20,7 +20,7 @@ if (
 }
 
 if ($_SESSION["login_shell"] == "nologin") {
-	header("Location: /list/user/");
+	header("Location: /list/mail/");
 	exit();
 }
 

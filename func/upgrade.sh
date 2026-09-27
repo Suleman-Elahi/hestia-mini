@@ -179,24 +179,6 @@ upgrade_set_branch() {
 	fi
 }
 
-upgrade_send_notification_to_panel() {
-	# If ROOT_USER is not set fallback to admin
-	if [ -z "$ROOT_USER" ]; then
-		ROOT_USER="admin"
-	fi
-	# Add notification to panel if variable is set to true or is not set
-	if [[ "$new_version" =~ "alpha" ]]; then
-		# Send notifications for development releases
-		$BIN/v-add-user-notification "$ROOT_USER" 'Development snapshot installed' '<p><span class="u-text-bold">Version:</span> '$new_version'<br><span class="u-text-bold">Code Branch:</span> '$RELEASE_BRANCH'</p><p>Please report any bugs by <a href="https://github.com/hestiacp/hestiacp/issues" target="_blank">opening an issue on GitHub</a>, and feel free to share your feedback on our <a href="https://forum.hestiacp.com" target="_blank">discussion forum</a>.</p><p><i class="fas fa-heart icon-red"></i> The Hestia Control Panel development team</p>'
-	elif [[ "$new_version" =~ "beta" ]]; then
-		# Send feedback notification for beta releases
-		$BIN/v-add-user-notification "$ROOT_USER" 'Thank you for testing Hestia Control Panel '$new_version'.' '<p>Please share your feedback with our development team through our <a href="https://forum.hestiacp.com" target="_blank">discussion forum</a>.</p><p>Found a bug? <a href="https://github.com/hestiacp/hestiacp/issues" target="_blank">Open an issue on GitHub</a>!</p><p><i class="fas fa-heart icon-red"></i> The Hestia Control Panel development team</p>'
-	else
-		# Send normal upgrade complete notification for stable releases
-		$BIN/v-add-user-notification "$ROOT_USER" 'Upgrade complete' '<p>Hestia Control Panel has been updated to <span class="u-text-bold">v'$new_version'</span>.</p><p><a href="https://github.com/hestiacp/hestiacp/blob/release/CHANGELOG.md" target="_blank">View release notes</a></p><p>Please report any bugs by <a href="https://github.com/hestiacp/hestiacp/issues" target="_blank">opening an issue on GitHub</a>.</p><p class="u-text-bold">Have a wonderful day!</p><p><i class="fas fa-heart icon-red"></i> The Hestia Control Panel development team</p>'
-	fi
-}
-
 upgrade_send_notification_to_email() {
 	# If ROOT_USER is not set fallback to admin
 	if [ -z "$ROOT_USER" ]; then
@@ -671,43 +653,6 @@ upgrade_phpmyadmin() {
 	fi
 }
 
-upgrade_filemanager() {
-	FILE_MANAGER_CHECK=$(cat $HESTIA/conf/hestia.conf | grep "FILE_MANAGER='false'")
-	if [ -z "$FILE_MANAGER_CHECK" ]; then
-		if [ -f "$HESTIA/web/fm/version" ]; then
-			fm_version=$(cat $HESTIA/web/fm/version)
-		else
-			fm_version="1.0.0"
-		fi
-		if ! version_ge "$fm_version" "$fm_v"; then
-			echo "[ ! ] Upgrading File Manager to version $fm_v..."
-			# Reinstall the File Manager
-			$BIN/v-delete-sys-filemanager quiet yes
-			$BIN/v-add-sys-filemanager quiet
-		else
-			echo "[ * ] File Manager is up to date ($fm_v)..."
-
-			if [ "$UPGRADE_UPDATE_FILEMANAGER_CONFIG" = "true" ]; then
-				if [ -e "$HESTIA/web/fm/configuration.php" ]; then
-					echo "[ ! ] Updating File Manager configuration..."
-					# Update configuration.php
-					cp -f $HESTIA_INSTALL_DIR/filemanager/filegator/configuration.php $HESTIA/web/fm/configuration.php
-
-					# Path to the file manager configuration file where the change will be made.
-					config_file="$HESTIA/web/fm/configuration.php"
-					app_name="File Manager - $APP_NAME"
-
-					# Sed replaces only the value after "File Manager -"
-					sed -i "s|\(\$dist_config\[\"frontend_config\"\]\[\"app_name\"\] = \"File Manager - \).*\";|\1${APP_NAME}\";|" "$config_file"
-
-					# Set environment variable for interface
-					$BIN/v-change-sys-config-value 'FILE_MANAGER' 'true'
-				fi
-			fi
-		fi
-	fi
-}
-
 upgrade_roundcube() {
 	if [ -n "$(echo "$WEBMAIL_SYSTEM" | grep -w 'roundcube')" ]; then
 		if [ -d "/usr/share/roundcube" ]; then
@@ -757,7 +702,7 @@ upgrade_rebuild_users() {
 		else
 			echo "[ * ] Rebuilding user accounts and domains, this may take a few minutes..."
 		fi
-		for user in $("$BIN/v-list-users" list); do
+		for user in "$ROOT_USER"; do
 			export restart="no"
 			if [ "$DEBUG_MODE" = "true" ]; then
 				echo "      - $user:"

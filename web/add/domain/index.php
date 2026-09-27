@@ -132,7 +132,8 @@ if (empty($v_dns_provider)) {
 	$v_dns_provider = "manual";
 }
 
-$accept = $_GET["accept"] ?? "";
+// Single-admin panel: no standard-user gate, form always shown.
+$accept = "true";
 
 render_page($user, $TAB, "add_domain");
 

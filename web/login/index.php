@@ -44,9 +44,6 @@ if (isset($_SESSION["user"])) {
 					$output,
 					$return_var,
 				);
-				// Reset account details for File Manager to impersonated user
-				unset($_SESSION["_sf2_attributes"]);
-				unset($_SESSION["_sf2_meta"]);
 				if (!empty($_GET["edit_link"])) {
 					$edit_link = urldecode($_GET["edit_link"]);
 					$url = $edit_link . "&token=" . $_SESSION["token"];
@@ -66,7 +63,7 @@ if (isset($_SESSION["user"])) {
 	if (empty($_GET["loginas"])) {
 		// Default view to Users list for administrator accounts
 		if ($_SESSION["userContext"] === "admin" && !isset($_SESSION["look"])) {
-			header("Location: /list/user/");
+			header("Location: /list/mail/");
 			exit();
 		}
 
@@ -83,13 +80,13 @@ if (isset($_SESSION["user"])) {
 
 		// Determine landing page: admin sees user list, others get mail or db
 		if ($_SESSION["userContext"] === "admin" && empty($_SESSION["look"])) {
-			header("Location: /list/user/");
+			header("Location: /list/mail/");
 		} elseif ($data[$user_plain]["MAIL_DOMAINS"] !== "0") {
 			header("Location: /list/mail/");
 		} elseif ($data[$user_plain]["DATABASES"] !== "0") {
-			header("Location: /list/db/");
+			header("Location: /list/mail/");
 		} else {
-			header("Location: /list/user/");
+			header("Location: /list/mail/");
 		}
 		exit();
 	}
@@ -361,13 +358,13 @@ function authenticate_user($user, $password, $twofa = "") {
 					exit();
 				} else {
 					if ($_SESSION["userContext"] === "admin") {
-						header("Location: /list/user/");
+						header("Location: /list/mail/");
 					} elseif ($data[$user]["MAIL_DOMAINS"] != "0") {
 						header("Location: /list/mail/");
 					} elseif ($data[$user]["DATABASES"] != "0") {
-						header("Location: /list/db/");
+						header("Location: /list/mail/");
 					} else {
-						header("Location: /list/user/");
+						header("Location: /list/mail/");
 					}
 					exit();
 				}

@@ -26,7 +26,7 @@ if (empty($_GET["domain"])) {
 	$data = json_decode(implode("", $output), true);
 	$data = array_reverse($data, true);
 	unset($output);
-	exec(HESTIA_CMD . "v-list-user-ips " . $user . " json", $output, $return_var);
+	exec(HESTIA_CMD . "v-list-sys-ips " . "json", $output, $return_var);
 	$ips = json_decode(implode("", $output), true);
 	$ips = array_reverse($ips, true);
 	unset($output);

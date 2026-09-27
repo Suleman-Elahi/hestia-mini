@@ -35,9 +35,9 @@ fi
 #                       Action                             #
 #----------------------------------------------------------#
 
-# Creating user_list
+# Creating user_list (Hestia-Mini: single admin user only)
 if [ -z "$user" ]; then
-	user_list="$("$BIN/v-list-users" list)"
+	user_list="$ROOT_USER"
 else
 	user_list="$user"
 fi
@@ -85,7 +85,7 @@ for user in $user_list; do
 	if [ "$user" = "$ROOT_USER" ]; then
 		spnd=$(grep "SUSPENDED='yes'" $HESTIA/data/users/*/user.conf | wc -l)
 		SUSPENDED_USERS=$spnd
-		U_USERS=$("$BIN/v-list-users" list | wc -l)
+		U_USERS=1
 	fi
 
 	ips=$(ls $HESTIA/data/ips)

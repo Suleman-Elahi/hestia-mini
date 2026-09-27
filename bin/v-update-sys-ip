@@ -98,7 +98,7 @@ if [ -n "$old_ip" ]; then
 
 	# Updating MAIL
 	if [ -n "$IMAP_SYSTEM" ]; then
-		for user in $("$BIN/v-list-users" list); do
+		for user in "$ROOT_USER"; do
 			$BIN/v-rebuild-mail-domains "$user" no
 		done
 		$BIN/v-restart-mail

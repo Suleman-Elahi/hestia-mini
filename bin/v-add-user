@@ -66,6 +66,15 @@ is_package_valid
 # Perform verification if read-only mode is enabled
 check_hestia_demo_mode
 
+# Hestia-Mini: single admin user only. This command exists solely for the
+# installer bootstrap; no other users may ever be created.
+if [ "$user" != "$ROOT_USER" ]; then
+	check_result "$E_FORBIDEN" "only the admin user ($ROOT_USER) can exist"
+fi
+if [ -d "$HESTIA/data/users/$ROOT_USER" ]; then
+	check_result "$E_EXISTS" "user $ROOT_USER already exists"
+fi
+
 #----------------------------------------------------------#
 #                       Action                             #
 #----------------------------------------------------------#
@@ -289,9 +298,6 @@ fi
 if [ -x "$HESTIA/data/packages/$package.sh" ]; then
 	$HESTIA/data/packages/$package.sh "$user" "$email" "$name"
 fi
-
-# Adding jailed sftp env
-$BIN/v-add-user-sftp-jail $user
 
 #----------------------------------------------------------#
 #                       Hestia                             #

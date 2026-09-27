@@ -303,7 +303,7 @@ function top_panel($user, $TAB) {
 
 	// Set home location URLs
 	if ($_SESSION["userContext"] === "admin" && empty($_SESSION["look"])) {
-		$home_url = "/list/user/";
+		$home_url = "/list/mail/";
 	} else {
 		if ($panel[$user]["MAIL_DOMAINS"] != "0") {
 			$home_url = "/list/mail/";
@@ -509,42 +509,6 @@ function load_hestia_config() {
 	}
 }
 
-/**
- * Returns the list of all web domains from all users grouped by Backend Template used and owner
- *
- * @return array
- */
-function backendtpl_with_webdomains() {
-	exec(HESTIA_CMD . "v-list-users json", $output, $return_var);
-	$users = json_decode(implode("", $output), true);
-	unset($output);
-
-	$backend_list = [];
-	foreach ($users as $user => $user_details) {
-		exec(
-			HESTIA_CMD . "v-list-web-domains " . quoteshellarg($user) . " json",
-			$output,
-			$return_var,
-		);
-		$domains = json_decode(implode("", $output), true);
-		unset($output);
-		foreach ($domains as $domain => $domain_details) {
-			if (!empty($domain_details["BACKEND"])) {
-				$backend = $domain_details["BACKEND"];
-				$backend_list[$backend][$user][] = $domain;
-
-				// Also count custom backend template names like YOURNAME-PHP-8_4 under PHP-8_4
-				if (preg_match('/(PHP-\d+_\d+)$/', $backend, $m)) {
-					// Avoid duplicates when backend already is the base template
-					if ($backend !== $m[1]) {
-						$backend_list[$m[1]][$user][] = $domain;
-					}
-				}
-			}
-		}
-	}
-	return $backend_list;
-}
 /**
  * Check if password is valid
  *

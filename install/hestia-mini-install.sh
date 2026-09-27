@@ -4,7 +4,7 @@
 #
 # Hestia-Mini Installer
 # A stripped-down admin panel derived from HestiaCP
-# Supports: Mail, Domain Management (Reverse Proxy/Load Balancing), File Management
+# Supports: Mail, Domain Management (Reverse Proxy/Load Balancing), Terminal
 #
 # ======================================================== #
 
@@ -75,20 +75,17 @@ HESTIA_INSTALL_BUILD="${HESTIA_BASE_VER}-1+${os_id}${HESTIA_CHANNEL}"
 
 # Supported PHP version (also used for panel PHP-FPM pool)
 fpm_v="8.2"
-# File Manager (Filegator) version
-fm_v="7.15.1"
-
-# Defining software pack - minimal: mail + file manager (no database)
+# Defining software pack - minimal: mail + domains + terminal (no database)
 software="acl apt-transport-https ca-certificates clamav-daemon cron curl dnsutils dovecot-imapd
-  dovecot-managesieved dovecot-pop3d dovecot-sieve exim4 exim4-daemon-heavy expect
+  dovecot-managesieved dovecot-pop3d dovecot-sieve exim4 exim4-daemon-heavy
   git hestia=${HESTIA_INSTALL_BUILD} hestia-nginx hestia-php hestia-web-terminal jq libmail-dkim-perl lsb-release
   mc net-tools nodejs
   nginx php${fpm_v} php${fpm_v}-apcu php${fpm_v}-bcmath php${fpm_v}-bz2 php${fpm_v}-cgi
   php${fpm_v}-cli php${fpm_v}-common php${fpm_v}-curl php${fpm_v}-gd php${fpm_v}-imagick
   php${fpm_v}-imap php${fpm_v}-intl php${fpm_v}-ldap php${fpm_v}-mbstring
   php${fpm_v}-pspell php${fpm_v}-readline
-  php${fpm_v}-xml php${fpm_v}-zip php${fpm_v}-sqlite3 php${fpm_v}-fpm sqlite3 spamd unrar-free
-  unzip util-linux vim-common xxd whois zip zstd restic composer"
+  php${fpm_v}-xml php${fpm_v}-zip php${fpm_v}-sqlite3 php${fpm_v}-fpm sqlite3 spamd
+  unzip util-linux vim-common xxd whois zip composer"
 
 installer_dependencies="apt-transport-https ca-certificates curl dirmngr gnupg openssl wget sudo"
 
@@ -105,7 +102,8 @@ NC='\033[0m'
 # Non-interactive flags (can be overridden via env or CLI flags below)
 ASSUME_YES='no'
 PURGE_STUB_MTA='ask'
-FM_INSTALL='yes'
+ANTIVIRUS_INSTALL='yes'
+ANTISPAM_INSTALL='yes'
 ADMIN_EMAIL=''
 ADMIN_PASSWORD=''
 PANEL_DOMAIN=''
@@ -141,8 +139,12 @@ while [ $# -gt 0 ]; do
 			PURGE_STUB_MTA='no'
 			shift
 			;;
-		--no-filemanager)
-			FM_INSTALL='no'
+		--no-antivirus)
+			ANTIVIRUS_INSTALL='no'
+			shift
+			;;
+		--no-antispam)
+			ANTISPAM_INSTALL='no'
 			shift
 			;;
 		--admin-email)
@@ -162,7 +164,8 @@ while [ $# -gt 0 ]; do
 			echo "  --yes, -y             Non-interactive: assume yes to all prompts"
 			echo "  --purge-mta           Automatically purge a conflicting stub MTA on port 25"
 			echo "  --no-purge-mta        Never purge, just warn"
-			echo "  --no-filemanager      Skip installing the File Manager"
+			echo "  --no-antivirus        Skip installing ClamAV antivirus for mail"
+			echo "  --no-antispam         Skip installing SpamAssassin antispam for mail"
 			echo "  --admin-email EMAIL   Admin contact email (default: admin@<hostname>)"
 			echo "  --admin-password PASS Admin password (default: randomly generated)"
 			echo "  --panel-domain DOMAIN Panel domain for Let's Encrypt SSL (e.g. panel.example.com)"
@@ -517,6 +520,19 @@ if port_in_use 25; then
 	fi
 fi
 
+# Optional mail-security components (prompt only when interactive and
+# not already decided via flags)
+if [ "$ASSUME_YES" != 'yes' ]; then
+	if [ "$ANTIVIRUS_INSTALL" = 'yes' ]; then
+		read -r -p "  Install ClamAV antivirus for mail scanning? [Y/n] " reply
+		[[ "$reply" =~ ^[Nn]$ ]] && ANTIVIRUS_INSTALL='no'
+	fi
+	if [ "$ANTISPAM_INSTALL" = 'yes' ]; then
+		read -r -p "  Install SpamAssassin antispam for mail scoring? [Y/n] " reply
+		[[ "$reply" =~ ^[Nn]$ ]] && ANTISPAM_INSTALL='no'
+	fi
+fi
+
 #----------------------------------------------------------#
 #                    Install software                       #
 #----------------------------------------------------------#
@@ -592,6 +608,14 @@ rm -f /etc/apt/sources.list.d/hestia.list /etc/apt/sources.list.d/hestia.list.tm
 
 if [ "$os" = 'debian' ] && [ "$release" -lt 12 ]; then
 	software=$(echo "$software" | sed -e "s/spamd/spamassassin/g")
+fi
+
+# Drop mail-security packages the user opted out of
+if [ "$ANTIVIRUS_INSTALL" != 'yes' ]; then
+	software=$(echo "$software" | sed -e "s/clamav-daemon//g")
+fi
+if [ "$ANTISPAM_INSTALL" != 'yes' ]; then
+	software=$(echo "$software" | sed -e "s/spamd//g" -e "s/spamassassin//g")
 fi
 
 echo -e "\n[ * ] Installing installer dependencies..."
@@ -722,8 +746,7 @@ if [ -f "$HESTIA_INSTALL_DIR/logrotate/hestia" ]; then
 fi
 
 # Copy install/ resources (needed at runtime by bin/func scripts and by
-# this installer itself for exim/dovecot/phpmyadmin/phppgadmin/filemanager
-# templates). Prefer the minipanel source tree, then the base hestia package
+# this installer itself for exim/dovecot/roundcube templates). Prefer the minipanel source tree, then the base hestia package
 # installed by apt, then a sibling checkout of the upstream hestiacp repo.
 echo "[ * ] Staging install resources..."
 if [ -d "$MINIPANEL_SRC/install/deb" ]; then
@@ -844,11 +867,26 @@ echo -e "\n[ * ] Creating configuration..."
 if [ -z "$ADMIN_EMAIL" ]; then
 	ADMIN_EMAIL="admin@$(hostname -f 2> /dev/null || hostname)"
 fi
+# Mail-security systems reflect the install-time opt-outs; empty means disabled
+if [ "$ANTIVIRUS_INSTALL" = 'yes' ]; then
+	antivirus_system='clamav-daemon'
+else
+	antivirus_system=''
+fi
+if [ "$ANTISPAM_INSTALL" = 'yes' ]; then
+	if [ "$os" = 'debian' ] && [ "$release" -lt 12 ]; then
+		antispam_system='spamassassin'
+	else
+		antispam_system='spamd'
+	fi
+else
+	antispam_system=''
+fi
 rm -f "$HESTIA/conf/minipanel.conf"
 cat > $HESTIA/conf/hestia.conf << EOF
 MAIL_SYSTEM='exim4'
-ANTIVIRUS_SYSTEM='clamav-daemon'
-ANTISPAM_SYSTEM='$([ "$os" = 'debian' ] && [ "$release" -lt 12 ] && echo 'spamassassin' || echo 'spamd')'
+ANTIVIRUS_SYSTEM='$antivirus_system'
+ANTISPAM_SYSTEM='$antispam_system'
 IMAP_SYSTEM='dovecot'
 # Roundcube webmail (SQLite backend)
 WEB_SYSTEM='nginx'
@@ -856,7 +894,6 @@ WEB_PORT='80'
 WEB_SSL_PORT='443'
 WEBMAIL_ALIAS='webmail'
 WEBMAIL_SYSTEM='roundcube'
-FILE_MANAGER='$([ "$FM_INSTALL" = 'yes' ] && echo 'true' || echo 'false')'
 API='yes'
 LANGUAGE='en'
 THEME='default'
@@ -930,19 +967,27 @@ touch /var/log/dovecot.log
 chown dovecot:mail /var/log/dovecot.log
 chmod 660 /var/log/dovecot.log
 
-echo -e "\n[ * ] Configuring ClamAV (antivirus)..."
-systemctl enable clamav-daemon 2>/dev/null
-freshclam > /dev/null 2>&1 &
-
-echo -e "\n[ * ] Configuring SpamAssassin (antispam)..."
-if [ "$os" = 'debian' ] && [ "$release" -lt 12 ]; then
-	systemctl enable spamassassin 2>/dev/null
+if [ "$ANTIVIRUS_INSTALL" = 'yes' ]; then
+	echo -e "\n[ * ] Configuring ClamAV (antivirus)..."
+	systemctl enable clamav-daemon 2>/dev/null
+	freshclam > /dev/null 2>&1 &
 else
-	systemctl enable spamd 2>/dev/null
+	echo -e "\n[ * ] Skipping ClamAV (disabled by user choice)."
+fi
+
+if [ "$ANTISPAM_INSTALL" = 'yes' ]; then
+	echo -e "\n[ * ] Configuring SpamAssassin (antispam)..."
+	if [ "$os" = 'debian' ] && [ "$release" -lt 12 ]; then
+		systemctl enable spamassassin 2>/dev/null
+	else
+		systemctl enable spamd 2>/dev/null
+	fi
+else
+	echo -e "\n[ * ] Skipping SpamAssassin (disabled by user choice)."
 fi
 
 #----------------------------------------------------------#
-#            Configure PHP-FPM pool (panel + File Manager)   #
+#            Configure PHP-FPM pool (panel + webmail)   #
 #----------------------------------------------------------#
 
 echo -e "\n[ * ] Configuring PHP-FPM pool..."
@@ -1142,23 +1187,6 @@ $HESTIA/bin/v-update-sys-defaults >> "$LOG" 2>&1
 warn_only $? "v-update-sys-defaults encountered a warning"
 
 #----------------------------------------------------------#
-#                Install File Manager                       #
-#----------------------------------------------------------#
-
-if [ "$FM_INSTALL" = 'yes' ]; then
-	echo -e "\n[ * ] Installing File Manager..."
-	export HOMEDIR='/home'
-	export APP_NAME='Hestia-Mini'
-	if [ ! -d "/home/admin" ]; then
-		mkdir -p /home/admin/.composer /home/admin/.config
-	fi
-	$HESTIA/bin/v-add-sys-filemanager quiet >> $LOG 2>&1
-	warn_only $? "File Manager installation failed - re-run manually with: /usr/local/hestia/bin/v-add-sys-filemanager"
-else
-	echo -e "\n[ * ] Skipping File Manager install (disabled via --no-filemanager)."
-fi
-
-#----------------------------------------------------------#
 #                Install Roundcube Webmail                 #
 #----------------------------------------------------------#
 
@@ -1277,11 +1305,16 @@ echo -e "  Username:   admin"
 echo -e "  Password:   $adminpass"
 echo -e "\n"
 echo -e "  Features enabled:"
-echo -e "    - Mail (Exim + Dovecot + ClamAV + SpamAssassin)"
-echo -e "    - Domain Management (Nginx reverse proxy + load balancing)"
-if [ "$FM_INSTALL" = 'yes' ]; then
-	echo -e "    - File Manager"
+mail_features="Exim + Dovecot"
+if [ "$ANTIVIRUS_INSTALL" = 'yes' ]; then
+	mail_features="$mail_features + ClamAV"
 fi
+if [ "$ANTISPAM_INSTALL" = 'yes' ]; then
+	mail_features="$mail_features + SpamAssassin"
+fi
+echo -e "    - Mail ($mail_features)"
+echo -e "    - Domain Management (Nginx reverse proxy + load balancing)"
+echo -e "    - Terminal (web terminal)"
 echo -e "\n"
 echo -e "  Please change the admin password after first login."
 echo -e "  See docs/INSTALL.md for DNS/mail-deliverability setup (SPF/DKIM/PTR)."

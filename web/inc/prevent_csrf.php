@@ -109,18 +109,11 @@ function prevent_get_csrf() {
 			//list of possible entries route and these should never be blocked
 			if (
 				in_array($_SERVER["DOCUMENT_URI"], [
-					"/list/user/index.php",
 					"/login/index.php",
 					"/list/domain/index.php",
 					"/list/mail/index.php",
 					"/list/terminal/index.php",
 					"/list/terminal/",
-					"/list/log/index.php",
-					"/list/log/auth/index.php",
-					"/list/package/index.php",
-					"/list/key/index.php",
-					"/list/access-key/index.php",
-					"/list/notifications/index.php",
 					"/reset/index.php",
 				])
 			) {
