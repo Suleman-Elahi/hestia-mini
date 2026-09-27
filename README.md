@@ -108,6 +108,26 @@ Uninstall is destructive by default — always run `--dry-run` first.
 
 ---
 
+> **NOTE — independent project, no upstream tracking:** Hestia-Mini is a
+> standalone fork. It does not track HestiaCP releases. After installing,
+> freeze the panel packages so no upstream upgrade can silently revert
+> Mini's changes (deleted pages, single-user guard, trimmed API, and
+> panel-specific fixes all live in `/usr/local/hestia`, which the upstream
+> `hestia` package would overwrite):
+>
+> ```bash
+> sudo apt-mark hold hestia hestia-nginx hestia-php hestia-web-terminal
+> ```
+>
+> To fully detach, also remove the upstream apt source (`hestia.list` and
+> its keyring) — mail-stack packages (Exim, Dovecot, Nginx, PHP) keep
+> updating from Debian/Ubuntu/Sury normally. From that point on, this git
+> repo is the sole source of updates: copy changed files over
+> `/usr/local/hestia/` and restart `hestia` (+ `hestia-web-terminal` when
+> its backend changed).
+
+---
+
 ## Project structure
 
 | Path | Purpose |
