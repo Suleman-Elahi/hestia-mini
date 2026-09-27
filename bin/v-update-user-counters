@@ -109,6 +109,11 @@ for user in $user_list; do
 	if [ -f $USER_DATA/domain.conf ]; then
 		U_DOMAINS=$(grep -c "DOMAIN=" $USER_DATA/domain.conf)
 	fi
+	# U_DOMAINS did not exist in user.conf before the single-user rebuild;
+	# ensure the key is present so the recount below is actually persisted.
+	if ! grep -q "^U_DOMAINS=" $USER_DATA/user.conf 2>/dev/null; then
+		echo "U_DOMAINS='0'" >> $USER_DATA/user.conf
+	fi
 
 	# Checking web system
 	U_WEB_DOMAINS=0
