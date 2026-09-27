@@ -67,9 +67,56 @@
 
 	<?php require $_SERVER["HESTIA"] . "/web/templates/includes/jump-to-top-link.php"; ?>
 
-	<?php if ($_SESSION["DEBUG_MODE"] == "true") {
-		require $_SERVER["HESTIA"] . "/web/templates/pages/debug_panel.php";
-	} ?>
+	<script>
+		// Hestia-Mini: double-submission guard. Slow operations (DKIM key
+		// generation, Exim rebuilds) keep the page responsive long enough to
+		// click Save/Delete twice, and the second identical request then fails
+		// with a confusing "already exists" / "doesn't exist" error. The first
+		// submit/click always goes through; repeats are swallowed.
+		(function () {
+			function disableSubmitButtons(form) {
+				form.querySelectorAll('button[type="submit"], input[type="submit"], button:not([type])').forEach(function (el) {
+					el.disabled = true;
+				});
+				// Toolbar buttons live outside <form> and attach via form="...".
+				if (form.id) {
+					document.querySelectorAll('[form="' + CSS.escape(form.id) + '"]').forEach(function (el) {
+						el.disabled = true;
+					});
+				}
+			}
+			document.addEventListener('submit', function (event) {
+				var form = event.target;
+				if (!(form instanceof HTMLFormElement)) {
+					return;
+				}
+				if (form.dataset.doubleSubmitGuard) {
+					event.preventDefault();
+					return;
+				}
+				form.dataset.doubleSubmitGuard = '1';
+				disableSubmitButtons(form);
+			}, true);
+			document.addEventListener('click', function (event) {
+				var link = event.target instanceof Element ? event.target.closest('a[href*="/delete/"]') : null;
+				if (!link) {
+					return;
+				}
+				if (link.dataset.doubleSubmitGuard) {
+					event.preventDefault();
+					event.stopPropagation();
+					return;
+				}
+				link.dataset.doubleSubmitGuard = '1';
+				// Re-arm after 3s in case navigation was cancelled (e.g. the
+				// confirmation dialog was dismissed). A real navigation tears
+				// the page down first, so this never unblocks a duplicate.
+				setTimeout(function () {
+					delete link.dataset.doubleSubmitGuard;
+				}, 3000);
+			}, true);
+		})();
+	</script>
 
 </body>
 </html>
