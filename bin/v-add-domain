@@ -109,6 +109,11 @@ conf="$USER_DATA/domain.conf"
 echo "DOMAIN='$domain' ALGORITHM='$algorithm' TARGETS='$targets' SSL='$ssl' SUSPENDED='no' TIME='$time' DATE='$date'" >> "$conf"
 chmod 660 "$conf"
 
+# A stale IP-bound default_server vhost (e.g. /etc/nginx/conf.d/<IP>.conf)
+# shadows this domain and makes the reload below fail to bind the new
+# wildcard listens, so drop it first (backed up under /root/).
+remove_shadowing_default_vhosts
+
 # Test nginx config
 test_nginx_config
 if [ $? -ne 0 ]; then

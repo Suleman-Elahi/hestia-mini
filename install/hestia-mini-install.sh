@@ -938,9 +938,13 @@ if [ -d "$HESTIA_INSTALL_DIR/exim" ]; then
 	mkdir -p /etc/exim4/domains /etc/exim4/domains_debug
 
 	# Select the appropriate Exim config template based on the installed
-	# Exim version. Exim 4.95-4.97 enforce tainted filenames but lack the
-	# ${untaint{...}} operator (added in 4.98), so we need a template that
-	# launders tainted variables through lookups.
+	# Exim version. Exim 4.94+ enforces tainted filenames but versions
+	# before 4.98 lack the ${untaint{...}} operator (added in 4.98), so
+	# they need a template that launders tainted variables through
+	# lookups. Never sed-patch taint handling into the generic template:
+	# hand-written ${extract...} substitutions broke SMTP delivery in the
+	# past (bare ':' inside require_files, wrong passwd field). Use the
+	# versioned upstream templates instead.
 	exim_version=$(exim4 -bV 2>/dev/null | grep -oP 'Exim version \K[0-9]+\.[0-9]+' | head -n1)
 	exim_major=$(echo "$exim_version" | cut -d. -f1)
 	exim_minor=$(echo "$exim_version" | cut -d. -f2)
@@ -951,25 +955,17 @@ if [ -d "$HESTIA_INSTALL_DIR/exim" ]; then
 			if [ -f "$HESTIA_INSTALL_DIR/exim/exim4.conf.4.95.template" ]; then
 				cp -f "$HESTIA_INSTALL_DIR/exim/exim4.conf.4.95.template" /etc/exim4/exim4.conf.template 2>> "$LOG"
 			else
-				# Fallback: use generic template and apply sed patch
-				cp -f "$HESTIA_INSTALL_DIR/exim/exim4.conf.template" /etc/exim4/exim4.conf.template 2>> "$LOG"
-				sed -i 's|/etc/exim4/domains/\$domain/|/etc/exim4/domains/\${lookup{\$domain}lsearch{/etc/exim4/domains/index}}/|g' \
-					/etc/exim4/exim4.conf.template 2>> "$LOG"
-				sed -i 's|/etc/exim4/domains/\$sender_address_domain/|/etc/exim4/domains/\${lookup{\$sender_address_domain}lsearch{/etc/exim4/domains/index}}/|g' \
-					/etc/exim4/exim4.conf.template 2>> "$LOG"
-				sed -i 's|/etc/exim4/domains/\${domain:\$authenticated_id}/|/etc/exim4/domains/\${lookup{\${domain:\$authenticated_id}}dsearch{/etc/exim4/domains/}}/|g' \
-					/etc/exim4/exim4.conf.template 2>> "$LOG"
-				sed -i 's|/mail/\$domain/\$local_part"|/mail/${lookup{$domain}lsearch{/etc/exim4/domains/index}}/${extract{2}{:}{${lookup{$local_part}lsearch{/etc/exim4/domains/${lookup{$domain}lsearch{/etc/exim4/domains/index}}/passwd}}}}"|g' \
-					/etc/exim4/exim4.conf.template 2>> "$LOG"
-				sed -i 's|/mail/\$domain/\$local_part/.Spam"|/mail/${lookup{$domain}lsearch{/etc/exim4/domains/index}}/${extract{2}{:}{${lookup{$local_part}lsearch{/etc/exim4/domains/${lookup{$domain}lsearch{/etc/exim4/domains/index}}/passwd}}}}/.Spam"|g' \
-					/etc/exim4/exim4.conf.template 2>> "$LOG"
-				sed -i 's|autoreply\.\${local_part}\.msg|autoreply.${extract{2}{:}{${lookup{$local_part}lsearch{/etc/exim4/domains/${lookup{$domain}lsearch{/etc/exim4/domains/index}}/passwd}}}}.msg|g' \
-					/etc/exim4/exim4.conf.template 2>> "$LOG"
-				sed -i 's|/etc/exim4/domains/\${lc:\${domain:\$h_from:}}/dkim\.pem|/etc/exim4/domains/${lookup{${lc:${domain:$h_from:}}}lsearch{/etc/exim4/domains/index}}/dkim.pem|g' \
-					/etc/exim4/exim4.conf.template 2>> "$LOG"
+				# Fallback: the 4.94 template's dsearch laundering is valid
+				# for 4.95+ as well (it only lacks SRS routing).
+				cp -f "$HESTIA_INSTALL_DIR/exim/exim4.conf.4.94.template" /etc/exim4/exim4.conf.template 2>> "$LOG"
 			fi
+		elif [ "$exim_major" -eq 4 ] && [ "$exim_minor" -eq 94 ]; then
+			# Exim 4.94 already enforces tainted filenames: use its
+			# dedicated upstream template (see HestiaCP thread "Exim
+			# 4.94 Tainted filename for search").
+			cp -f "$HESTIA_INSTALL_DIR/exim/exim4.conf.4.94.template" /etc/exim4/exim4.conf.template 2>> "$LOG"
 		else
-			# Exim < 4.95: use generic template (no taint checking)
+			# Exim < 4.94: use generic template (no taint checking)
 			cp -f "$HESTIA_INSTALL_DIR/exim/exim4.conf.template" /etc/exim4/exim4.conf.template 2>> "$LOG"
 		fi
 	else

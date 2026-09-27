@@ -242,3 +242,48 @@ reload_nginx() {
 	systemctl reload nginx 2>&1
 	return $?
 }
+
+# Remove upstream default catch-all vhosts that bind the server's public IP
+# explicitly (e.g. /etc/nginx/conf.d/<IP>.conf shipped by the hestia
+# package). An IP-specific `listen' shadows wildcard `listen 80/443' domain
+# blocks, and - worse - a stale IP-bound socket makes every later
+# `nginx -s reload' fail with `bind() ... Address already in use' for the new
+# wildcard listen while `systemctl reload nginx' still exits 0, so callers
+# believe the new config is live while nginx keeps serving the old one.
+# Only default_server catch-alls are touched; real site configs are never
+# removed. Deleted files are backed up under the backup directory.
+# Usage: remove_shadowing_default_vhosts [conf_dir] [backup_dir]
+remove_shadowing_default_vhosts() {
+	local conf_dir="${1:-/etc/nginx/conf.d}"
+	local backup_dir="${2:-/root}"
+	local shadow_conf listen_ip listen_port shadowing shadow_backup
+
+	[ -d "$conf_dir" ] || return 0
+
+	for shadow_conf in "$conf_dir"/*.conf; do
+		[ -f "$shadow_conf" ] || continue
+		case "$(basename "$shadow_conf")" in
+			minipanel.conf | 0rtt-anti-replay.conf | domain_*.conf) continue ;;
+		esac
+		if ! grep -Eq '^[[:space:]]*listen[[:space:]]+[^;#]*\bdefault_server\b' "$shadow_conf"; then
+			continue
+		fi
+		shadowing='no'
+		while read -r listen_ip listen_port; do
+			case "$listen_ip" in
+				127.* | ::1) continue ;;
+			esac
+			case "$listen_port" in
+				80 | 443) shadowing='yes' ;;
+			esac
+		done < <(grep -Eo '^[[:space:]]*listen[[:space:]]+[^;#]+' "$shadow_conf" 2>/dev/null \
+			| grep -Eo '(([0-9]{1,3}\.){3}[0-9]{1,3}|\[[^]]+\]):[0-9]+' \
+			| tr -d '[]' | tr ':' ' ')
+		if [ "$shadowing" = 'yes' ]; then
+			shadow_backup="$backup_dir/hestia_mini_removed_$(basename "$shadow_conf").$(date +%d%m%Y%H%M%S)"
+			cp -a "$shadow_conf" "$shadow_backup"
+			rm -f "$shadow_conf"
+			echo "[ ! ] Removed shadowing default Nginx vhost $shadow_conf (backup: $shadow_backup)"
+		fi
+	done
+}
