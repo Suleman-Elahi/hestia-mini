@@ -936,19 +936,53 @@ echo -e "\n[ * ] Configuring Exim (mail transfer agent)..."
 gpasswd -a Debian-exim mail > /dev/null 2>&1
 if [ -d "$HESTIA_INSTALL_DIR/exim" ]; then
 	mkdir -p /etc/exim4/domains /etc/exim4/domains_debug
-	cp -f "$HESTIA_INSTALL_DIR/exim/exim4.conf.template" /etc/exim4/exim4.conf.template 2>> "$LOG"
+
+	# Select the appropriate Exim config template based on the installed
+	# Exim version. Exim 4.95-4.97 enforce tainted filenames but lack the
+	# ${untaint{...}} operator (added in 4.98), so we need a template that
+	# launders tainted variables through lookups.
+	exim_version=$(exim4 -bV 2>/dev/null | grep -oP 'Exim version \K[0-9]+\.[0-9]+' | head -n1)
+	exim_major=$(echo "$exim_version" | cut -d. -f1)
+	exim_minor=$(echo "$exim_version" | cut -d. -f2)
+
+	if [ -n "$exim_major" ] && [ -n "$exim_minor" ]; then
+		if [ "$exim_major" -gt 4 ] || { [ "$exim_major" -eq 4 ] && [ "$exim_minor" -ge 95 ]; }; then
+			# Exim 4.95+: use version-specific template with taint-check fixes
+			if [ -f "$HESTIA_INSTALL_DIR/exim/exim4.conf.4.95.template" ]; then
+				cp -f "$HESTIA_INSTALL_DIR/exim/exim4.conf.4.95.template" /etc/exim4/exim4.conf.template 2>> "$LOG"
+			else
+				# Fallback: use generic template and apply sed patch
+				cp -f "$HESTIA_INSTALL_DIR/exim/exim4.conf.template" /etc/exim4/exim4.conf.template 2>> "$LOG"
+				sed -i 's|/etc/exim4/domains/\$domain/|/etc/exim4/domains/\${lookup{\$domain}lsearch{/etc/exim4/domains/index}}/|g' \
+					/etc/exim4/exim4.conf.template 2>> "$LOG"
+				sed -i 's|/etc/exim4/domains/\$sender_address_domain/|/etc/exim4/domains/\${lookup{\$sender_address_domain}lsearch{/etc/exim4/domains/index}}/|g' \
+					/etc/exim4/exim4.conf.template 2>> "$LOG"
+				sed -i 's|/etc/exim4/domains/\${domain:\$authenticated_id}/|/etc/exim4/domains/\${lookup{\${domain:\$authenticated_id}}dsearch{/etc/exim4/domains/}}/|g' \
+					/etc/exim4/exim4.conf.template 2>> "$LOG"
+				sed -i 's|/mail/\$domain/\$local_part"|/mail/${lookup{$domain}lsearch{/etc/exim4/domains/index}}/${extract{2}{:}{${lookup{$local_part}lsearch{/etc/exim4/domains/${lookup{$domain}lsearch{/etc/exim4/domains/index}}/passwd}}}}"|g' \
+					/etc/exim4/exim4.conf.template 2>> "$LOG"
+				sed -i 's|/mail/\$domain/\$local_part/.Spam"|/mail/${lookup{$domain}lsearch{/etc/exim4/domains/index}}/${extract{2}{:}{${lookup{$local_part}lsearch{/etc/exim4/domains/${lookup{$domain}lsearch{/etc/exim4/domains/index}}/passwd}}}}/.Spam"|g' \
+					/etc/exim4/exim4.conf.template 2>> "$LOG"
+				sed -i 's|autoreply\.\${local_part}\.msg|autoreply.${extract{2}{:}{${lookup{$local_part}lsearch{/etc/exim4/domains/${lookup{$domain}lsearch{/etc/exim4/domains/index}}/passwd}}}}.msg|g' \
+					/etc/exim4/exim4.conf.template 2>> "$LOG"
+				sed -i 's|/etc/exim4/domains/\${lc:\${domain:\$h_from:}}/dkim\.pem|/etc/exim4/domains/${lookup{${lc:${domain:$h_from:}}}lsearch{/etc/exim4/domains/index}}/dkim.pem|g' \
+					/etc/exim4/exim4.conf.template 2>> "$LOG"
+			fi
+		else
+			# Exim < 4.95: use generic template (no taint checking)
+			cp -f "$HESTIA_INSTALL_DIR/exim/exim4.conf.template" /etc/exim4/exim4.conf.template 2>> "$LOG"
+		fi
+	else
+		# Could not detect Exim version, use generic template
+		cp -f "$HESTIA_INSTALL_DIR/exim/exim4.conf.template" /etc/exim4/exim4.conf.template 2>> "$LOG"
+	fi
+
 	cp -f "$HESTIA_INSTALL_DIR/exim/dnsbl.conf" /etc/exim4/dnsbl.conf 2>> "$LOG"
 	cp -f "$HESTIA_INSTALL_DIR/exim/spam-blocks.conf" /etc/exim4/spam-blocks.conf 2>> "$LOG"
 	cp -f "$HESTIA_INSTALL_DIR/exim/limit.conf" /etc/exim4/limit.conf 2>> "$LOG"
 	cp -f "$HESTIA_INSTALL_DIR/exim/system.filter" /etc/exim4/system.filter 2>> "$LOG"
 	touch /etc/exim4/white-blocks.conf
-	# Exim 4.96 enforces tainted filenames with no untaint operator, so
-	# per-domain router lookups using the envelope $domain defer. Launder the
-	# domain through a fixed index file (lookup results are trusted); the
-	# index itself is maintained by v-add/delete-mail-domain. Idempotent and
-	# a no-op if upstream ever changes these lines.
-	sed -i 's|/etc/exim4/domains/$domain|/etc/exim4/domains/${lookup{$domain}lsearch{/etc/exim4/domains/index}}|g' \
-		/etc/exim4/exim4.conf.template 2>> "$LOG"
+
 	# Seed the index from any pre-existing mail domains (reinstall case).
 	for existing_mail in "$HESTIA"/data/users/*/mail.conf; do
 		[ -f "$existing_mail" ] || continue
@@ -963,6 +997,7 @@ if [ -d "$HESTIA_INSTALL_DIR/exim" ]; then
 	exim4 -bP >> "$LOG" 2>&1
 	check_result $? "Exim configuration validation failed. Check details in: $LOG"
 fi
+
 
 echo -e "\n[ * ] Configuring Dovecot (IMAP/POP3)..."
 gpasswd -a dovecot mail > /dev/null 2>&1

@@ -1,0 +1,22 @@
+/bin/bash: line 93: g \\
+ \t\t\t\t\t/etc/exim4/exim4.conf.template 2>> \"\$LOG\"
+ \t\t\tfi
+ \t\telse
+ \t\t\t# Exim < 4.95: use generic template (no taint checking)
+ \t\t\tcp -f \"\$HESTIA_INSTALL_DIR/exim/exim4.conf.template\" /etc/exim4/exim4.conf.template 2>> \"\$LOG\"
+ \t\tfi
+ \telse
+ \t\t# Could not detect Exim version, use generic template
+ \t\tcp -f \"\$HESTIA_INSTALL_DIR/exim/exim4.conf.template\" /etc/exim4/exim4.conf.template 2>> \"\$LOG\"
+ \tfi
+
+ \tcp -f \"\$HESTIA_INSTALL_DIR/exim/dnsbl.conf\" /etc/exim4/dnsbl.conf 2>> \"\$LOG\"
+ \tcp -f \"\$HESTIA_INSTALL_DIR/exim/spam-blocks.conf\" /etc/exim4/spam-blocks.conf 2>> \"\$LOG\"
+ \tcp -f \"\$HESTIA_INSTALL_DIR/exim/limit.conf\" /etc/exim4/limit.conf 2>> \"\$LOG\"
+ \tcp -f \"\$HESTIA_INSTALL_DIR/exim/system.filter\" /etc/exim4/system.filter 2>> \"\$LOG\"
+ \ttouch /etc/exim4/white-blocks.conf
+
+ \t# Seed the index from any pre-existing mail domains (reinstall case).
+ \tfor existing_mail in \"\$HESTIA\"/data/users/*/mail.conf; do
+ \t\t[ -f \"\$existing_mail\" ] || continue
+ \t\tsed -n \"s/^DOMAIN=([^]*\).*/1:: No such file or directory
