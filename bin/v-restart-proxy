@@ -1,0 +1,53 @@
+#!/bin/bash
+# info: restart reverse proxy
+# options: [RESTART]
+#
+# example: v-restart-proxy yes
+#
+# Hestia-Mini: there is no separate proxy tier; managed domains are served
+# by the system Nginx. This reloads it instead of hard-restarting so a
+# freshly written domain config can never take the panel offline: a bad
+# config fails the reload and Nginx keeps serving the previous working
+# configuration.
+
+#----------------------------------------------------------#
+#                Variables & Functions                     #
+#----------------------------------------------------------#
+
+# Argument definition
+restart=$1
+
+# Includes
+# shellcheck source=/etc/hestiacp/hestia.conf
+source /etc/hestiacp/hestia.conf
+# shellcheck source=/usr/local/hestia/func/main.sh
+source $HESTIA/func/main.sh
+# load config file
+source_conf "$HESTIA/conf/hestia.conf"
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+# Perform verification if read-only mode is enabled
+check_hestia_demo_mode
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+if [ "$restart" = 'no' ]; then
+	touch $HESTIA/data/queue/restart.pipe
+	echo "$BIN/v-restart-proxy yes" >> $HESTIA/data/queue/restart.pipe
+else
+	systemctl reload nginx >> /dev/null 2>&1
+	check_result $? "Nginx reload failed"
+fi
+
+#----------------------------------------------------------#
+#                       Hestia                             #
+#----------------------------------------------------------#
+
+# Logging
+$BIN/v-log-action "system" "Info" "System" "Reverse proxy reloaded."
+log_event "$OK" "$ARGUMENTS"
