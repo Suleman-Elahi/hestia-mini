@@ -65,6 +65,39 @@ generate_upstream_block() {
 	echo "}"
 }
 
+# Listen directives for Mini domain blocks. Upstream mail/webmail templates
+# bind explicit server IPs, and Nginx prefers an IP-specific `listen' over a
+# wildcard one regardless of server_name - so without the same bindings a
+# webmail 443 vhost swallows every other host on that IP (including panel
+# domains). Emit both: explicit IPv4 (wins v4 routing by exact server_name)
+# plus the wildcard (preserves IPv6 and zero-IP states).
+# Usage: generate_listen_block <ssl_enabled: yes|no>
+generate_listen_block() {
+	local ssl_enabled="$1"
+	echo "    listen 80;"
+	if [ -d "$HESTIA/data/ips" ]; then
+		local ip
+		for ip in $(ls "$HESTIA/data/ips" 2>/dev/null); do
+			case "$ip" in
+				*:*) continue ;; # IPv6 stays on the wildcard listener
+			esac
+			echo "    listen ${ip}:80;"
+		done
+	fi
+	if [ "$ssl_enabled" = "yes" ]; then
+		echo "    listen 443 ssl http2;"
+		if [ -d "$HESTIA/data/ips" ]; then
+			local ip
+			for ip in $(ls "$HESTIA/data/ips" 2>/dev/null); do
+				case "$ip" in
+					*:*) continue ;;
+				esac
+				echo "    listen ${ip}:443 ssl http2;"
+			done
+		fi
+	fi
+}
+
 # Generate Nginx server block for a domain
 # Usage: generate_server_block <user> <domain> <algorithm> <ssl_enabled> <ssl_cert_path> <ssl_key_path> <targets>
 generate_server_block() {
@@ -84,10 +117,7 @@ generate_server_block() {
 	fi
 
 	echo "server {"
-	echo "    listen 80;"
-	if [ "$has_valid_ssl" = "yes" ]; then
-		echo "    listen 443 ssl http2;"
-	fi
+	generate_listen_block "$has_valid_ssl"
 	echo "    server_name $domain www.$domain;"
 	echo ""
 

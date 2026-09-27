@@ -194,7 +194,14 @@ check_hestia_demo_mode
 # Generate correct variables for mail domain SSL certificates
 if [ -n "$mail" ]; then
 	root_domain=$domain
-	domain="mail.$root_domain"
+	# Avoid mail.mail.example.com when the mail domain is itself already a
+	# mail subdomain (e.g. mail.example.com): the certificate must cover the
+	# hostname clients actually connect to.
+	if [[ "$root_domain" == mail.* ]]; then
+		domain="$root_domain"
+	else
+		domain="mail.$root_domain"
+	fi
 	webmail=$(get_object_value "mail" "DOMAIN" "$root_domain" '$WEBMAIL')
 	if [ -n "$webmail" ]; then
 		aliases="$WEBMAIL_ALIAS.$root_domain"
