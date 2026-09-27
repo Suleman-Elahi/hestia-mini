@@ -54,6 +54,13 @@ accounts=$(wc -l "$USER_DATA/mail/$domain.conf" | cut -f 1 -d ' ')
 # Deleting exim configuration files
 if [[ "$MAIL_SYSTEM" =~ exim ]]; then
 	rm -f /etc/$MAIL_SYSTEM/domains/$domain_idn
+	index_file="/etc/$MAIL_SYSTEM/domains/index"
+	if [ -f "$index_file" ]; then
+		for index_domain in "$domain" "$domain_idn"; do
+			[ -n "$index_domain" ] || continue
+			sed -i "\|^${index_domain//./\\.}: ${index_domain//./\\.}$|d" "$index_file"
+		done
+	fi
 	rm -rf $HOMEDIR/$user/conf/mail/$domain
 	rm -rf $HOMEDIR/$user/mail/$domain_idn
 fi

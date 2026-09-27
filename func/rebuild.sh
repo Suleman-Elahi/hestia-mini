@@ -209,6 +209,13 @@ rebuild_mail_domain_conf() {
 		mkdir -p $HOMEDIR/$user/conf/mail/$domain
 		ln -s $HOMEDIR/$user/conf/mail/$domain \
 			/etc/$MAIL_SYSTEM/domains/$domain_idn
+		# Keep the Exim domain index (see v-add-mail-domain) in sync.
+		for index_domain in "$domain" "$domain_idn"; do
+			[ -n "$index_domain" ] || continue
+			grep -q -x -F "$index_domain: $index_domain" /etc/$MAIL_SYSTEM/domains/index 2>/dev/null \
+				|| echo "$index_domain: $index_domain" >> /etc/$MAIL_SYSTEM/domains/index
+		done
+		chmod 644 /etc/$MAIL_SYSTEM/domains/index 2>/dev/null || true
 		rm -f $HOMEDIR/$user/conf/mail/$domain/accounts
 		rm -f $HOMEDIR/$user/conf/mail/$domain/aliases
 		rm -f $HOMEDIR/$user/conf/mail/$domain/antispam

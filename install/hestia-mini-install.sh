@@ -942,6 +942,22 @@ if [ -d "$HESTIA_INSTALL_DIR/exim" ]; then
 	cp -f "$HESTIA_INSTALL_DIR/exim/limit.conf" /etc/exim4/limit.conf 2>> "$LOG"
 	cp -f "$HESTIA_INSTALL_DIR/exim/system.filter" /etc/exim4/system.filter 2>> "$LOG"
 	touch /etc/exim4/white-blocks.conf
+	# Exim 4.96 enforces tainted filenames with no untaint operator, so
+	# per-domain router lookups using the envelope $domain defer. Launder the
+	# domain through a fixed index file (lookup results are trusted); the
+	# index itself is maintained by v-add/delete-mail-domain. Idempotent and
+	# a no-op if upstream ever changes these lines.
+	sed -i 's|/etc/exim4/domains/$domain/|/etc/exim4/domains/${lookup{$domain}lsearch{/etc/exim4/domains/index}}/|g' \
+		/etc/exim4/exim4.conf.template 2>> "$LOG"
+	# Seed the index from any pre-existing mail domains (reinstall case).
+	for existing_mail in "$HESTIA"/data/users/*/mail.conf; do
+		[ -f "$existing_mail" ] || continue
+		sed -n "s/^DOMAIN='\([^']*\)'.*/\1: \1/p" "$existing_mail" >> /etc/exim4/domains/index 2>> "$LOG"
+	done
+	if [ -f /etc/exim4/domains/index ]; then
+		sort -u /etc/exim4/domains/index -o /etc/exim4/domains/index 2>> "$LOG"
+		chmod 644 /etc/exim4/domains/index 2>> "$LOG"
+	fi
 	update-exim4.conf >> "$LOG" 2>&1
 	check_result $? "Failed to generate the Exim configuration. Check details in: $LOG"
 	exim4 -bP >> "$LOG" 2>&1

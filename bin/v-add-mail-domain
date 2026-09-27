@@ -134,6 +134,16 @@ if [[ "$MAIL_SYSTEM" =~ exim ]]; then
 	ln -s $HOMEDIR/$user/conf/mail/$domain \
 		/etc/$MAIL_SYSTEM/domains/$domain_idn
 
+	# Keep the Exim domain index in sync. Exim 4.96 enforces tainted
+	# filenames with no untaint operator, so router lookups launder $domain
+	# through this fixed file (lookup results are trusted).
+	for index_domain in "$domain" "$domain_idn" "$domain_utf"; do
+		[ -n "$index_domain" ] || continue
+		grep -q -x -F "$index_domain: $index_domain" /etc/$MAIL_SYSTEM/domains/index 2>/dev/null \
+			|| echo "$index_domain: $index_domain" >> /etc/$MAIL_SYSTEM/domains/index
+	done
+	chmod 644 /etc/$MAIL_SYSTEM/domains/index 2>/dev/null || true
+
 	# Seeting outgoing ip address
 	if [ -n "$local_ip" ]; then
 		echo "$local_ip" > $HOMEDIR/$user/conf/mail/$domain/ip
