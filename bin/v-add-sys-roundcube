@@ -65,8 +65,13 @@ fi
 if [[ -f "$RC_INSTALL_DIR/program/include/iniset.php" ]]; then
 	version="$(grep RCMAIL_VERSION "$RC_INSTALL_DIR/program/include/iniset.php" | cut -d "'" -f 4)"
 	if [[ "$version" == "$rc_v" ]]; then
-		echo "Error: Installed version ($version) is equal to the available version ($rc_v)"
-		exit 2
+		# Reinstalls (e.g. after the uninstaller, which keeps /var/lib/roundcube
+		# and /etc/roundcube) land here. "Already installed" is success, not
+		# failure: skip the install/upgrade block below but still run final
+		# validation and (re)publish the webmail routes, which may have been
+		# wiped by a package purge/reinstall in between.
+		echo "Info: Roundcube $rc_v is already installed, skipping installation."
+		UPDATE="uptodate"
 	else
 		UPDATE="yes"
 	fi
@@ -150,7 +155,9 @@ install_twofactor_plugin() {
 	local plugin_dir="$RC_INSTALL_DIR/plugins/twofactor_gauthenticator"
 	local plugin_conf_dir="$RC_CONFIG_DIR/plugins/twofactor_gauthenticator"
 	if [[ ! -d "$plugin_dir" ]]; then
-		if ! git clone --depth 1 https://github.com/alexandregz/twofactor_gauthenticator.git "$plugin_dir" >> "$LOG" 2>&1; then
+		# $LOG is only set when run from the installer (which does not export
+		# it), so default to /dev/null when invoked directly.
+		if ! git clone --depth 1 https://github.com/alexandregz/twofactor_gauthenticator.git "$plugin_dir" >> "${LOG:-/dev/null}" 2>&1; then
 			echo "Warning: Failed to download twofactor_gauthenticator plugin (2FA unavailable)"
 			return 1
 		fi
@@ -317,7 +324,7 @@ if [[ "$UPDATE" == "no" ]]; then
 	fi
 
 	phpenmod mcrypt > /dev/null 2>&1
-else
+elif [[ "$UPDATE" == "yes" ]]; then
 	cd "$RC_INSTALL_DIR" || fail "Cannot enter $RC_INSTALL_DIR"
 	download_rc
 
@@ -426,12 +433,20 @@ if [ -f "$nginx_conf" ] && ! grep -q "location /webmail/" "$nginx_conf"; then
 	systemctl restart hestia-nginx 2>/dev/null || true
 fi
 
+# A skipped install (already up to date) still needs the 2FA plugin ensured:
+# the installer-time clone may never have succeeded (e.g. unset $LOG redirect).
+if [[ "$UPDATE" == "uptodate" ]]; then
+	install_twofactor_plugin || echo "Warning: 2FA plugin setup incomplete"
+fi
+
 #----------------------------------------------------------#
 #                       Hestia                             #
 #----------------------------------------------------------#
 
 if [[ "$UPDATE" == "yes" ]]; then
 	"$BIN/v-log-action" "system" "Info" "Plugins" "Roundcube updated (Version: $rc_v)."
+elif [[ "$UPDATE" == "uptodate" ]]; then
+	"$BIN/v-log-action" "system" "Info" "Plugins" "Roundcube already installed (Version: $rc_v)."
 else
 	"$BIN/v-log-action" "system" "Info" "Plugins" "Roundcube enabled (Version: $rc_v)."
 fi

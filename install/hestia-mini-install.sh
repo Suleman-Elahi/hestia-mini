@@ -79,7 +79,7 @@ fpm_v="8.2"
 software="acl apt-transport-https ca-certificates clamav-daemon cron curl dnsutils dovecot-imapd
   dovecot-managesieved dovecot-pop3d dovecot-sieve exim4 exim4-daemon-heavy
   git hestia=${HESTIA_INSTALL_BUILD} hestia-nginx hestia-php hestia-web-terminal jq libmail-dkim-perl lsb-release
-  mc net-tools nodejs
+  lsof mc net-tools nodejs
   nginx php${fpm_v} php${fpm_v}-apcu php${fpm_v}-bcmath php${fpm_v}-bz2 php${fpm_v}-cgi
   php${fpm_v}-cli php${fpm_v}-common php${fpm_v}-curl php${fpm_v}-gd php${fpm_v}-imagick
   php${fpm_v}-imap php${fpm_v}-intl php${fpm_v}-ldap php${fpm_v}-mbstring
