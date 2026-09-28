@@ -144,6 +144,38 @@ update_rc_modules() {
 	return 0
 }
 
+install_twofactor_plugin() {
+	# 2FA via TOTP (alexandregz/twofactor_gauthenticator). Non-fatal:
+	# mail must keep working even if the plugin source is unreachable.
+	local plugin_dir="$RC_INSTALL_DIR/plugins/twofactor_gauthenticator"
+	local plugin_conf_dir="$RC_CONFIG_DIR/plugins/twofactor_gauthenticator"
+	if [[ ! -d "$plugin_dir" ]]; then
+		if ! git clone --depth 1 https://github.com/alexandregz/twofactor_gauthenticator.git "$plugin_dir" >> "$LOG" 2>&1; then
+			echo "Warning: Failed to download twofactor_gauthenticator plugin (2FA unavailable)"
+			return 1
+		fi
+	fi
+	mkdir -p "$plugin_conf_dir" 2>/dev/null || true
+	if [[ ! -f "$plugin_conf_dir/config.inc.php" ]]; then
+		if [[ -f "$HESTIA_COMMON_DIR/roundcube/plugins/config_twofactor_gauthenticator.inc.php" ]]; then
+			cp -f "$HESTIA_COMMON_DIR/roundcube/plugins/config_twofactor_gauthenticator.inc.php" "$plugin_conf_dir/config.inc.php" 2>/dev/null || true
+		elif [[ -f "$plugin_dir/config.inc.php.dist" ]]; then
+			cp -f "$plugin_dir/config.inc.php.dist" "$plugin_conf_dir/config.inc.php" 2>/dev/null || true
+		fi
+	fi
+	ln -sfn "$plugin_conf_dir/config.inc.php" "$plugin_dir/config.inc.php" 2>/dev/null || true
+	chown -R hestiamail:www-data "$plugin_dir" 2>/dev/null || true
+	# Enable the plugin in existing configs (fresh installs get it via main.inc.php)
+	if [[ -f "$RC_CONFIG_DIR/config.inc.php" ]] && ! grep -q "twofactor_gauthenticator" "$RC_CONFIG_DIR/config.inc.php"; then
+		sed -i 's/\$config\["plugins"\] = \[/&/; s/"archive"\]/"archive", "twofactor_gauthenticator"]/' "$RC_CONFIG_DIR/config.inc.php" 2>/dev/null || true
+		# Fallback if the plugins line has a different shape
+		if ! grep -q "twofactor_gauthenticator" "$RC_CONFIG_DIR/config.inc.php"; then
+			echo '$config["plugins"][] = "twofactor_gauthenticator";' >> "$RC_CONFIG_DIR/config.inc.php"
+		fi
+	fi
+	return 0
+}
+
 #----------------------------------------------------------#
 #                       Action                             #
 #----------------------------------------------------------#
@@ -193,6 +225,9 @@ if [[ "$UPDATE" == "no" ]]; then
 	cp -f "$HESTIA_COMMON_DIR/roundcube/plugins/config_zipdownload.inc.php" "$RC_CONFIG_DIR/plugins/zipdownload/config.inc.php" \
 		|| fail "Failed to install zipdownload plugin configuration"
 	ln -s "$RC_CONFIG_DIR/plugins/zipdownload/config.inc.php" ./plugins/zipdownload/config.inc.php
+
+	# 2FA plugin (TOTP) - non-fatal, warn only on failure
+	install_twofactor_plugin || echo "Warning: 2FA plugin setup incomplete"
 
 	# Set up correct permissions roundcube
 	chown -R hestiamail:www-data "$RC_CONFIG_DIR/"
@@ -308,6 +343,8 @@ else
 	update_rc_modules
 
 	chown -R hestiamail:www-data "$RC_INSTALL_DIR"
+	# Re-ensure 2FA plugin survives upgrades (preserves existing user config)
+	install_twofactor_plugin || echo "Warning: 2FA plugin setup incomplete"
 	# Add roundcube configuration file to logrotate
 	if [[ -f "$HESTIA/install/deb/logrotate/roundcube" && ! -f /etc/logrotate.d/roundcube ]]; then
 		cp -f "$HESTIA/install/deb/logrotate/roundcube" /etc/logrotate.d/

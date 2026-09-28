@@ -1376,6 +1376,12 @@ fi
 systemctl daemon-reload > /dev/null 2>&1
 update-rc.d hestia defaults >> "$LOG" 2>&1
 check_result $? "Failed to register the Hestia panel service"
+# 'defaults' is a no-op when K-links already exist (e.g. reinstall after
+# 'systemctl disable hestia' from the uninstaller), leaving the panel
+# disabled across reboots -> 502 from the nginx proxy to :8083.
+# 'enable' converts K-links back to S-links and is a no-op on fresh installs.
+update-rc.d hestia enable >> "$LOG" 2>&1
+check_result $? "Failed to enable the Hestia panel service"
 systemctl daemon-reload > /dev/null 2>&1
 systemctl reset-failed hestia > /dev/null 2>&1 || true
 
