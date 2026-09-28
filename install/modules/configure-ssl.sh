@@ -54,8 +54,30 @@ configure_panel_ssl() {
 	# its own manager (no certbot), so the domain appears in Domains -> Reverse
 	# Proxy and the panel becomes reachable on the standard HTTPS port (443).
 	local domain_conf="$HESTIA/data/users/admin/domain.conf"
+	local user_ssl_dir="$HESTIA/data/users/admin/ssl"
+	# Belt and braces: the LE scripts bound their own network calls, but cap
+	# the whole step too so the installer can never hang forever here.
+	local issue_timeout=600
 	if [ -f "$domain_conf" ] && grep -q "DOMAIN='$panel_domain'" "$domain_conf"; then
-		echo "  Panel domain already configured, refreshing certificate..."
+		if [ -s "$user_ssl_dir/$panel_domain.crt" ] && [ -s "$user_ssl_dir/$panel_domain.key" ]; then
+			echo "  Panel domain already configured with a certificate, refreshing..."
+		else
+			echo "  Panel domain exists but has no certificate - requesting one from Let's Encrypt..."
+			if [ ! -x "$HESTIA/bin/v-add-letsencrypt-domain" ]; then
+				echo -e "  ${YELLOW}Warning: v-add-letsencrypt-domain is unavailable. Skipping SSL setup.${NC}"
+				return 0
+			fi
+			timeout -k 15 "$issue_timeout" "$HESTIA/bin/v-add-letsencrypt-domain" \
+				admin "$panel_domain" '' '' proxy >> "$LOG" 2>&1
+			if [ $? -ne 0 ]; then
+				echo -e "  ${YELLOW}Warning: Could not obtain a Let's Encrypt certificate (possible rate limit - see below).${NC}"
+				echo "  The panel remains available over HTTP and at https://$panel_domain:${backend_port} (self-signed)."
+				echo "  If the log shows HTTP 429, wait out the 'retry-after' period, then run once:"
+				echo "    /usr/local/hestia/bin/v-add-letsencrypt-domain admin $panel_domain '' '' proxy"
+				echo "  Check the log for details: $LOG"
+				return 0
+			fi
+		fi
 	else
 		echo "  Creating reverse proxy for https://$panel_domain ..."
 		if [ ! -x "$HESTIA/bin/v-add-domain" ]; then
@@ -63,11 +85,14 @@ configure_panel_ssl() {
 			return 0
 		fi
 
-		"$HESTIA/bin/v-add-domain" admin "$panel_domain" "$backend_target" \
+		timeout -k 15 "$issue_timeout" "$HESTIA/bin/v-add-domain" admin "$panel_domain" "$backend_target" \
 			"round_robin" "yes" "yes" "manual" >> "$LOG" 2>&1
 		if [ $? -ne 0 ]; then
 			echo -e "  ${YELLOW}Warning: Could not create the panel reverse proxy / obtain a Let's Encrypt certificate.${NC}"
 			echo "  The panel remains available at https://$panel_domain:${backend_port}"
+			echo "  If the log shows HTTP 429, Let's Encrypt rate-limited further attempts:"
+			echo "  wait out the 'retry-after' period, then run once:"
+			echo "    /usr/local/hestia/bin/v-add-letsencrypt-domain admin $panel_domain '' '' proxy"
 			echo "  Check the log for details: $LOG"
 			return 0
 		fi
@@ -76,7 +101,6 @@ configure_panel_ssl() {
 	# Reuse the issued certificate for the panel's own HTTPS listener so direct
 	# :${backend_port} access is trusted as well. v-update-letsencrypt-ssl keeps
 	# this copy refreshed on renewal.
-	local user_ssl_dir="$HESTIA/data/users/admin/ssl"
 	if [ -s "$user_ssl_dir/$panel_domain.crt" ] && [ -s "$user_ssl_dir/$panel_domain.key" ]; then
 		cp -f "$user_ssl_dir/$panel_domain.crt" "$HESTIA/ssl/certificate.crt"
 		cp -f "$user_ssl_dir/$panel_domain.key" "$HESTIA/ssl/certificate.key"

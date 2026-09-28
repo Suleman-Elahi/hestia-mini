@@ -50,7 +50,7 @@ query_le_v2() {
 	post_data=$post_data'"payload":"'"$payload_"'",'
 	post_data=$post_data'"signature":"'"$signature_"'"}'
 
-	curl --user-agent "HestiaCP" -s -i -d "$post_data" "$1" -H "$content"
+	curl --user-agent "HestiaCP" --connect-timeout 15 --max-time 120 --retry 2 -s -i -d "$post_data" "$1" -H "$content"
 }
 
 #----------------------------------------------------------#
@@ -120,8 +120,8 @@ if [ -z "$THUMB" ]; then
 	THUMB="$(echo -n "$jwk" | openssl dgst -sha256 -binary | encode_base64)"
 fi
 
-# Requesting ACME nonce
-nonce=$(curl -s -I "$LE_API/directory" | grep -i 'replay-nonce:' | head -n1 | cut -d: -f2 | tr -d ' \r\n')
+# Requesting ACME nonce (bounded: must never hang the installer)
+nonce=$(curl --connect-timeout 15 --max-time 60 --retry 2 -s -I "$LE_API/directory" | grep -i 'replay-nonce:' | head -n1 | cut -d: -f2 | tr -d ' \r\n')
 
 # Creating ACME account
 url="$LE_API/acme/new-acct"
