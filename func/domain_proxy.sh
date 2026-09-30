@@ -15,7 +15,41 @@ strip_target_scheme() {
 	echo "$target"
 }
 
-# Return the scheme (http or https) of the first proxy target.
+# Validate a single proxy backend token: [http(s)://]HOST:PORT
+# Usage: is_proxy_target_valid <target>
+is_proxy_target_valid() {
+	[[ "$1" =~ ^(https?://)?[a-zA-Z0-9.-]+:[0-9]+$ ]]
+}
+
+# Validate a per-backend weight modifier token: weight=N (N >= 1)
+# Usage: is_proxy_weight_valid <token>
+is_proxy_weight_valid() {
+	[[ "$1" =~ ^weight=[1-9][0-9]{0,5}$ ]]
+}
+
+# Validate a whitespace-separated proxy target list. Each backend is
+# [http(s)://]HOST:PORT and may be followed by a weight=N token that applies
+# to it. Aborts with E_INVALID on malformed input.
+# Usage: validate_proxy_targets <targets>
+validate_proxy_targets() {
+	local targets="$1"
+	local target last_server=""
+
+	[ -n "$targets" ] || check_result "$E_INVALID" "no backend targets provided"
+
+	for target in $targets; do
+		if is_proxy_weight_valid "$target"; then
+			[ -n "$last_server" ] || check_result "$E_INVALID" "weight '$target' has no preceding backend target"
+			last_server=""
+		elif is_proxy_target_valid "$target"; then
+			last_server="$target"
+		else
+			check_result "$E_INVALID" "invalid target format: $target (must be HOST:PORT, optionally prefixed with http:// or https://)"
+		fi
+	done
+}
+
+# Return the scheme (http or https) of the first proxy backend.
 # Usage: get_target_scheme <targets>
 get_target_scheme() {
 	local first_target="${1%% *}"
@@ -25,7 +59,10 @@ get_target_scheme() {
 	esac
 }
 
-# Generate Nginx upstream block for a domain
+# Generate Nginx upstream block for a domain.
+# Each backend is emitted as `server HOST:PORT [weight=N];`. The `weighted'
+# algorithm uses the round-robin default (weights travel on the server line,
+# which nginx accepts for every balancing method).
 # Usage: generate_upstream_block <domain> <algorithm> <targets>
 generate_upstream_block() {
 	local domain="$1"
@@ -36,9 +73,6 @@ generate_upstream_block() {
 	echo "upstream ${upstream_name} {"
 
 	case "$algorithm" in
-		round_robin)
-			# Default nginx behavior, no directive needed
-			;;
 		least_conn)
 			echo "    least_conn;"
 			;;
@@ -48,19 +82,29 @@ generate_upstream_block() {
 		hash)
 			echo "    hash \$request_uri consistent;"
 			;;
-		weighted)
-			# Handled per-server line (weight=N)
+		round_robin | weighted)
+			# Default nginx behavior, no directive needed
 			;;
 	esac
 
 	echo ""
 
-	# Parse targets - each target is "IP:PORT [weight=N]", optionally
+	# Parse targets - each backend is "HOST:PORT [weight=N]", optionally
 	# prefixed with http:// or https:// to select the upstream protocol.
+	# A weight token binds to the backend that precedes it.
+	local target pending_server=""
 	for target in $targets; do
-		[ -z "$target" ] && continue
-		echo "    server $(strip_target_scheme "$target");"
+		if is_proxy_weight_valid "$target"; then
+			if [ -n "$pending_server" ]; then
+				printf '    server %s weight=%s;\n' "$(strip_target_scheme "$pending_server")" "${target#weight=}"
+				pending_server=""
+			fi
+		else
+			[ -n "$pending_server" ] && printf '    server %s;\n' "$(strip_target_scheme "$pending_server")"
+			pending_server="$target"
+		fi
 	done
+	[ -n "$pending_server" ] && printf '    server %s;\n' "$(strip_target_scheme "$pending_server")"
 
 	echo "}"
 }

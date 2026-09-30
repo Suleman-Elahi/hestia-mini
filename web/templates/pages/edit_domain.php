@@ -37,7 +37,7 @@
 			<div class="u-mb20">
 				<label for="v_targets" class="form-label"><?= tohtml( _("Backend Targets")) ?></label>
 				<textarea class="form-control" name="v_targets" id="v_targets" rows="4" placeholder="127.0.0.1:8080 or https://127.0.0.1:8083" required><?= tohtml(trim($v_backends, "'")) ?></textarea>
-				<span class="form-check u-mt5 u-text-small u-text-secondary"><?= tohtml( _("One target per line, e.g. 127.0.0.1:8080")) ?></span>
+				<span class="form-check u-mt5 u-text-small u-text-secondary"><?= tohtml( _("One target per line, e.g. 127.0.0.1:8080. For weighted balancing append weight=N, e.g. 127.0.0.1:8080 weight=2")) ?></span>
 			</div>
 			<div class="u-mb20">
 				<label for="v_algorithm" class="form-label"><?= tohtml( _("Load Balancing Algorithm")) ?></label>

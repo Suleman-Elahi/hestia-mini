@@ -77,7 +77,7 @@ HESTIA_INSTALL_BUILD="${HESTIA_BASE_VER}-1+${os_id}${HESTIA_CHANNEL}"
 fpm_v="8.2"
 # Defining software pack - minimal: mail + domains + terminal (no database)
 software="acl apt-transport-https ca-certificates clamav-daemon cron curl dnsutils dovecot-imapd
-  dovecot-managesieved dovecot-pop3d dovecot-sieve exim4 exim4-daemon-heavy
+  dovecot-pop3d exim4 exim4-daemon-heavy
   git hestia=${HESTIA_INSTALL_BUILD} hestia-nginx hestia-php hestia-web-terminal jq libmail-dkim-perl lsb-release
   lsof mc net-tools nodejs
   nginx php${fpm_v} php${fpm_v}-apcu php${fpm_v}-bcmath php${fpm_v}-bz2 php${fpm_v}-cgi

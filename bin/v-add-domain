@@ -4,10 +4,13 @@
 #
 # example: v-add-domain admin example.com 127.0.0.1:8080
 # example: v-add-domain admin example.com "10.1.0.101:8080 10.1.0.102:8080" round_robin no yes
+# example: v-add-domain admin example.com "10.1.0.101:8080 10.1.0.102:8080 weight=2" weighted no yes
 # example: v-add-domain admin panel.example.com https://127.0.0.1:8083 round_robin yes yes
 #
 # Targets may be prefixed with http:// (default) or https:// to select the
 # protocol used when connecting to the upstream, e.g. a TLS-terminating panel.
+# A backend may be followed by a `weight=N' token (N >= 1) to bias load
+# balancing; unweighted backends default to weight 1.
 #
 # This function adds a domain with Nginx reverse proxy configuration.
 
@@ -48,10 +51,10 @@ is_object_unsuspended 'user' 'USER' "$user"
 
 # Validate algorithm
 case "$algorithm" in
-	round_robin|least_conn|ip_hash|hash)
+	round_robin|weighted|least_conn|ip_hash|hash)
 		;;
 	*)
-		check_result "$E_INVALID" "invalid algorithm: $algorithm (must be round_robin, least_conn, ip_hash, or hash)"
+		check_result "$E_INVALID" "invalid algorithm: $algorithm (must be round_robin, weighted, least_conn, ip_hash, or hash)"
 		;;
 esac
 
@@ -81,12 +84,10 @@ if [ -f "$USER_DATA/domain.conf" ] && grep -q "DOMAIN='$domain'" "$USER_DATA/dom
 	check_result "$E_EXISTS" "domain $domain already exists"
 fi
 
-# Verify target format (HOST:PORT or IP:PORT, optional http(s):// prefix, optional weight/params)
-for target in $targets; do
-	if [[ ! "$target" =~ ^(https?://)?[a-zA-Z0-9.-]+:[0-9]+(\ +.*)?$ ]]; then
-		check_result "$E_INVALID" "invalid target format: $target (must be HOST:PORT or IP:PORT, optionally prefixed with http:// or https://)"
-	fi
-done
+# Verify the target list and reject malformed input early. Each backend is
+# HOST:PORT (optionally http(s):// prefixed) and may be followed by a
+# whitespace-separated weight=N modifier.
+validate_proxy_targets "$targets"
 
 # Check package limits
 is_package_full 'WEB_DOMAINS' 2>/dev/null || true

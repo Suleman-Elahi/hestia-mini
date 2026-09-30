@@ -256,7 +256,7 @@ run systemctl reload nginx 2> /dev/null
 if [ "$KEEP_PACKAGES" != 'yes' ]; then
 	echo -e "\n[ * ] Purging underlying service packages..."
 
-	pkgs_always="hestia hestia-nginx hestia-php hestia-web-terminal nodejs clamav-daemon clamav-freshclam spamd spamassassin exim4 exim4-base exim4-config exim4-daemon-heavy bsd-mailx dovecot-imapd dovecot-managesieved dovecot-pop3d dovecot-sieve"
+	pkgs_always="hestia hestia-nginx hestia-php hestia-web-terminal nodejs clamav-daemon clamav-freshclam spamd spamassassin exim4 exim4-base exim4-config exim4-daemon-heavy bsd-mailx dovecot-imapd dovecot-pop3d"
 
 	# Only purge packages that are actually installed (ClamAV/SpamAssassin
 	# may have been skipped at install time)

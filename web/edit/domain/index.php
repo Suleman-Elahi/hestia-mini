@@ -34,7 +34,17 @@ unset($output);
 // Parse domain data
 $v_algorithm = $data[$v_domain]["ALGORITHM"] ?? "round_robin";
 $v_targets = $data[$v_domain]["TARGETS"] ?? "";
-$v_backends = str_replace(" ", "\n", $v_targets);
+// Keep each weight=N token on the same textarea line as the backend it
+// applies to, so an edited form round-trips back to the CLI unchanged.
+$v_backend_lines = [];
+foreach (preg_split("/\s+/", trim($v_targets), -1, PREG_SPLIT_NO_EMPTY) as $token) {
+	if (preg_match('/^weight=/', $token) && !empty($v_backend_lines)) {
+		$v_backend_lines[count($v_backend_lines) - 1] .= " " . $token;
+	} else {
+		$v_backend_lines[] = $token;
+	}
+}
+$v_backends = implode("\n", $v_backend_lines);
 $v_ssl = $data[$v_domain]["SSL"] ?? "no";
 $v_suspended = $data[$v_domain]["SUSPENDED"] ?? "no";
 $v_date = $data[$v_domain]["DATE"] ?? "";

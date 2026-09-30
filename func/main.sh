@@ -789,12 +789,6 @@ recalc_user_bandwidth_usage() {
 	sed -i "s/U_BANDWIDTH='$old'/U_BANDWIDTH='$usage'/g" $USER_DATA/user.conf
 }
 
-# Get next cron job id
-
-# Sort cron jobs by id
-
-# Sync cronjobs with system cron
-
 # Validates Local part email and mail alias
 is_localpart_format_valid() {
 	if [ ${#1} -eq 1 ]; then
@@ -915,8 +909,6 @@ is_netmask_format_valid() {
 	fi
 }
 
-# Proxy extention format validator
-
 # Number format validator
 is_number_format_valid() {
 	object_name=${2-number}
@@ -938,8 +930,6 @@ is_boolean_format_valid() {
 		check_result "$E_INVALID" "invalid $2 format :: $1"
 	fi
 }
-
-# Refresh IPset format validator
 
 # Common format validator
 is_common_format_valid() {
@@ -1118,9 +1108,6 @@ is_password_format_valid() {
 		check_result "$E_INVALID" "invalid password format :: $1"
 	fi
 }
-# Missing function -
-# Before: validate_format_shell
-# After: is_format_valid_shell
 is_format_valid_shell() {
 	if [ -z "$(grep -w $1 /etc/shells)" ]; then
 		echo "Error: shell $1 is not valid"
@@ -1190,11 +1177,6 @@ is_folder_exists() {
 		check_result "$E_NOTEXIST" "folder $1 does not exist"
 	fi
 }
-
-# Check access_key_id name
-# Don't work with legacy key format
-
-# SECRET_ACCESS_KEY format validation
 
 # Checks if the secret belongs to the access key
 check_access_key_secret() {
@@ -1353,17 +1335,6 @@ is_restart_format_valid() {
 	fi
 }
 
-check_backup_conditions() {
-	# Checking load average
-	la=$(awk -F'[. ]' '{print $1}' /proc/loadavg)
-	# i=0
-	while [ "$la" -ge "$BACKUP_LA_LIMIT" ]; do
-		echo -e "$(date "+%F %T") Load Average $la"
-		sleep 60
-		la=$(awk -F'[. ]' '{print $1}' /proc/loadavg)
-	done
-}
-
 # Define download function
 download_file() {
 	local url=$1
@@ -1476,18 +1447,6 @@ user_exec() {
 	setpriv --groups "$user_groups" --reuid "$user" --regid "$user" -- "${@}"
 }
 
-# Simple chmod wrapper that skips symlink files after glob expand
-no_symlink_chmod() {
-	local filemode=$1
-	shift
-
-	for i in "$@"; do
-		[[ -L ${i} ]] && continue
-
-		chmod "${filemode}" "${i}"
-	done
-}
-
 format_no_quotes() {
 	exclude="['|\"]"
 	if [[ "$1" =~ $exclude ]]; then
@@ -1533,7 +1492,6 @@ is_key_permissions_format_valid() {
 		for permission in "${permissions_arr[@]}"; do
 			permission="$(basename "$permission" | sed -E "s/^\s*|\s*$//g")"
 
-			#            if [[ -z "$(echo "$permission" | grep -E "^v-")" ]]; then
 			if [[ ! -e "$HESTIA/data/api/$permission" ]]; then
 				check_result "$E_NOTEXIST" "API $permission doesn't exist"
 			fi
@@ -1542,9 +1500,6 @@ is_key_permissions_format_valid() {
 			if [ "$ROLE" = "admin" ] && [ "$user" != "$ROOT_USER" ]; then
 				check_result "$E_INVALID" "Only the admin can run this API"
 			fi
-			#            elif [[ ! -e "$BIN/$permission" ]]; then
-			#                check_result "$E_NOTEXIST" "Command $permission doesn't exist"
-			#            fi
 		done
 	done <<< "$permissions"
 }
@@ -1627,63 +1582,4 @@ search_command_arg_position() {
 	done <<< "$command_options"
 
 	echo "$position"
-}
-
-add_chroot_jail() {
-	local user=$1
-
-	mkdir -p /srv/jail/$user
-	chown 0:0 /srv /srv/jail /srv/jail/$user
-	chmod 755 /srv /srv/jail /srv/jail/$user
-	if [ ! -d /srv/jail/$user/home ]; then
-		mkdir -p /srv/jail/$user/home
-		chown 0:0 /srv/jail/$user/home
-		chmod 755 /srv/jail/$user/home
-	fi
-	if [ ! -d /srv/jail/$user/home/$user ]; then
-		mkdir -p /srv/jail/$user/home/$user
-		chown 0:0 /srv/jail/$user/home/$user
-		chmod 755 /srv/jail/$user/home/$user
-	fi
-
-	systemd=$(systemd-escape -p --suffix=mount "/srv/jail/$user/home/$user")
-	cat > "/etc/systemd/system/$systemd" << EOF
-[Unit]
-Description=Mount $user's home directory to the jail chroot
-Before=local-fs.target
-
-[Mount]
-What=$(getent passwd | awk -F: -v u="$user" '$1 == u {print $6}')
-Where=/srv/jail/$user/home/$user
-Type=none
-Options=bind
-LazyUnmount=yes
-
-[Install]
-RequiredBy=local-fs.target
-EOF
-
-	systemctl daemon-reload > /dev/null 2>&1
-	systemctl enable "$systemd" > /dev/null 2>&1
-	systemctl start "$systemd" > /dev/null 2>&1
-}
-
-delete_chroot_jail() {
-	local user=$1
-
-	# Backwards compatibility with old style home jail
-	systemd=$(systemd-escape -p --suffix=mount "/srv/jail/$user/home")
-	systemctl stop "$systemd" > /dev/null 2>&1
-	systemctl disable "$systemd" > /dev/null 2>&1
-	rm -f "/etc/systemd/system/$systemd"
-
-	# Remove the new style home jail
-	systemd=$(systemd-escape -p --suffix=mount "/srv/jail/$user/home/$user")
-	systemctl stop "$systemd" > /dev/null 2>&1
-	systemctl disable "$systemd" > /dev/null 2>&1
-	rm -f "/etc/systemd/system/$systemd"
-
-	systemctl daemon-reload > /dev/null 2>&1
-	rm -r /srv/jail/$user/ > /dev/null 2>&1
-	rmdir /srv/jail/$user > /dev/null 2>&1
 }
